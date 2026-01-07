@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.research_files
+.browser_profile
+brave-profile
+app/profile
+app/__pycache__
+app/.mypy_cache
+*.md
+LICENSE
+Makefile
