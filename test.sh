@@ -1,7 +1,7 @@
 #!/bin/bash
 
 HOST="localhost"
-PORT="8888"
+PORT="8080"
 BASE="http://${HOST}:${PORT}"
 
 # Go to Google
