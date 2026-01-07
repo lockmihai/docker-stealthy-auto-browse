@@ -15,7 +15,7 @@ sleep 1
 # Type in search box
 curl -s -X POST "$BASE" \
     -H "Content-Type: application/json" \
-    -d '{"action": "type", "selector": "textarea[name=q]", "text": "what is the meaning of life"}'
+    -d '{"action": "type", "selector": "textarea[name=q]", "text": "peen goes in vageen"}'
 echo
 
 sleep 1
@@ -33,3 +33,9 @@ curl -s -X POST "$BASE" \
     -H "Content-Type: application/json" \
     -d '{"action": "get_text"}'
 echo
+
+sleep 1
+
+# Take screenshot
+curl -s "$BASE/screenshot" > screenshot.png
+echo "Screenshot saved to screenshot.png"

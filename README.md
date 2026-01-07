@@ -69,11 +69,6 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "goto", "url": "https://example.com"}'
 
-# Take screenshot (returns base64)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "screenshot"}'
-
 # Human-like click (real mouse movement + click)
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
@@ -131,7 +126,6 @@ curl -X POST http://localhost:8080 \
 |--------|------------|-------------|
 | `ping` | - | Health check, returns current URL |
 | `close` | - | Close browser and shutdown |
-| `screenshot` | `full_page` (bool) | Screenshot as base64 |
 | `goto` | `url`, `wait_until` | Navigate to URL |
 | `click` | `selector` | Playwright click (DOM event) |
 | `mouse_move` | `x`, `y`, `duration` | Human-like mouse movement |

@@ -15,7 +15,6 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
-import base64
 import os
 import random
 import sys
@@ -194,21 +193,6 @@ async def handle_command(request: web.Request) -> web.Response:
         return web.json_response(make_response(False, error="No active page"))
 
     try:
-        if action == "screenshot":
-            full_page = cmd.get("full_page", False)
-            data = await page.screenshot(type="png", full_page=full_page)
-            b64 = base64.b64encode(data).decode()
-            return web.json_response(
-                make_response(
-                    True,
-                    {
-                        "screenshot_b64": b64,
-                        "url": page.url,
-                        "title": await page.title(),
-                    },
-                )
-            )
-
         if action == "goto":
             url = cmd.get("url", "")
             if not url:
@@ -385,21 +369,13 @@ async def run_server(app: web.Application) -> None:
 async def main() -> None:
     global browser, WINDOW_OFFSET
 
-    # Get resolution from env
-    xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
-    res_parts = xvfb_res.split("x")
-    width = int(res_parts[0]) if len(res_parts) > 0 else 1920
-    height = int(res_parts[1]) if len(res_parts) > 1 else 1080
-
     config = BrowserConfig(
         user_data_dir="/userdata",
         headless=False,
         with_extensions=True,
-        width=width,
-        height=height,
     )
 
-    log(f"Starting browser at {width}x{height}")
+    log("Starting browser")
 
     # Setup HTTP routes
     app = web.Application()

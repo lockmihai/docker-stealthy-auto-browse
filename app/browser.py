@@ -51,7 +51,6 @@ class BrowserConfig:
     stealth_args: list[str] = field(
         default_factory=lambda: [
             "--disable-blink-features=AutomationControlled",
-            "--start-maximized",
         ]
     )
 
@@ -304,10 +303,17 @@ class Browser:
 
         args = list(self.config.stealth_args) + list(self.config.extra_args)
 
+        # Add window size from XVFB_RESOLUTION
+        xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
+        parts = xvfb_res.split("x")
+        if len(parts) >= 2:
+            args.append(f"--window-size={parts[0]},{parts[1]}")
+            args.append("--window-position=0,0")
+
         launch_opts: dict[str, Any] = {
             "user_data_dir": user_data_dir,
             "headless": self.config.headless,
-            "viewport": {"width": self.config.width, "height": self.config.height},
+            "no_viewport": True,  # Let browser size naturally from --start-maximized
             "chromium_sandbox": False,
             "args": args,
         }
