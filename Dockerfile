@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
+# noVNC auto-connect redirect
+RUN echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=vnc.html?autoconnect=true&resize=scale"></head></html>' > /usr/share/novnc/index.html
+
 # Firefox/Camoufox dependencies - install firefox-esr to pull correct GTK deps for any arch
 RUN apt-get update \
     && apt-get install -y --no-install-recommends firefox-esr fonts-liberation \

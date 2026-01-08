@@ -192,7 +192,7 @@ The following extensions are **pre-installed** in the container:
 Additional extensions can be installed via the persistent profile:
 
 1. Mount a profile directory: `-v ./my-profile:/userdata`
-2. Open VNC at `http://localhost:5900/vnc.html`
+2. Open VNC at `http://localhost:5900/`
 3. Navigate to `about:addons` and install extensions
 4. Extensions persist across restarts
 
@@ -204,7 +204,7 @@ Watch the browser in real-time via noVNC:
 docker run -d -p 5900:5900 psyb0t/stealthy-auto-browse
 ```
 
-Open `http://localhost:5900/vnc.html` and click Connect.
+Open `http://localhost:5900/` (auto-connects).
 
 ## Bot Detection Test Results
 
