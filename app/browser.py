@@ -1,19 +1,13 @@
-"""Stealth browser module using patchright."""
+"""Stealth browser module using Camoufox."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
 import os
-import shutil
-import signal
 import subprocess
-import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
-# Brave browser executable path
-BROWSER_PATH = "/usr/bin/brave-browser"
 
 # Path to JS files
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,37 +31,19 @@ class BrowserState:
 class BrowserConfig:
     """Browser configuration."""
 
-    width: int = 1920
-    height: int = 1080
-    executable_path: str | None = BROWSER_PATH
-    headless: bool = False  # False is stealthier
-    user_data_dir: str | None = None  # None = temp dir
-    use_xvfb: bool = True  # Start Xvfb if no DISPLAY
-    xvfb_display: str = ":99"
     timeout: float = 30.0
-    with_extensions: bool = False  # Enable extension installation from web store
-
-    # Stealth args - always applied
-    stealth_args: list[str] = field(
-        default_factory=lambda: [
-            "--disable-blink-features=AutomationControlled",
-        ]
-    )
-
-    # Extra args
-    extra_args: list[str] = field(default_factory=list)
+    user_data_dir: str | None = None  # None = temp dir
 
 
 class Browser:
-    """Stealth browser using patchright."""
+    """Stealth browser using Camoufox (Firefox-based, no CDP)."""
 
     def __init__(self, config: BrowserConfig | None = None) -> None:
         self.config = config or BrowserConfig()
-        self._xvfb_proc: subprocess.Popen[bytes] | None = None
         self._playwright: Any = None
+        self._browser: Any = None
         self._context: Any = None
         self._page: Any = None
-        self._temp_user_data_dir: str | None = None
         self._state = BrowserState()
 
     @property
@@ -78,7 +54,7 @@ class Browser:
     @property
     def is_running(self) -> bool:
         """Check if browser is running."""
-        return self._context is not None
+        return self._browser is not None
 
     @property
     def page(self) -> Any:
@@ -90,7 +66,6 @@ class Browser:
         if self.is_running:
             return
 
-        await self._setup_display()
         await self._launch_browser()
 
     async def stop(self) -> None:
@@ -109,6 +84,13 @@ class Browser:
                 pass
             self._context = None
 
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+
         if self._playwright:
             try:
                 await self._playwright.stop()
@@ -116,8 +98,6 @@ class Browser:
                 pass
             self._playwright = None
 
-        self._stop_xvfb()
-        self._cleanup_temp_dir()
         self._state = BrowserState()
 
     async def goto(self, url: str, wait_until: str = "networkidle") -> BrowserState:
@@ -235,102 +215,64 @@ class Browser:
 
         return await self._page.evaluate(js_code, visible_only)
 
-    async def _setup_display(self) -> None:
-        """Setup X display (Xvfb if needed)."""
-        if os.environ.get("DISPLAY"):
-            return
-
-        if not self.config.use_xvfb:
-            return
-
-        xvfb = shutil.which("Xvfb")
-        if not xvfb:
-            raise BrowserError("Xvfb not found and no DISPLAY set")
-
-        display = self.config.xvfb_display
-        resolution = f"{self.config.width}x{self.config.height}x24"
-
-        self._xvfb_proc = subprocess.Popen(
-            [xvfb, display, "-screen", "0", resolution, "-ac", "+extension", "GLX"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        await asyncio.sleep(0.5)
-
-        if self._xvfb_proc.poll() is not None:
-            raise BrowserError("Xvfb failed to start")
-
-        os.environ["DISPLAY"] = display
-
-    def _stop_xvfb(self) -> None:
-        """Stop Xvfb."""
-        if not self._xvfb_proc:
-            return
-
-        try:
-            self._xvfb_proc.send_signal(signal.SIGTERM)
-            self._xvfb_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self._xvfb_proc.kill()
-        except Exception:
-            pass
-
-        self._xvfb_proc = None
-
-    def _cleanup_temp_dir(self) -> None:
-        """Cleanup temp user data dir."""
-        if not self._temp_user_data_dir:
-            return
-
-        try:
-            shutil.rmtree(self._temp_user_data_dir, ignore_errors=True)
-        except Exception:
-            pass
-
-        self._temp_user_data_dir = None
-
     async def _launch_browser(self) -> None:
-        """Launch browser via patchright."""
-        from patchright.async_api import async_playwright
-
-        if self.config.user_data_dir:
-            user_data_dir = self.config.user_data_dir
-        else:
-            self._temp_user_data_dir = tempfile.mkdtemp(prefix="browser_")
-            user_data_dir = self._temp_user_data_dir
+        """Launch Camoufox Firefox directly via Playwright (no fingerprint spoofing)."""
+        from camoufox.pkgman import launch_path
+        from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
 
-        args = list(self.config.stealth_args) + list(self.config.extra_args)
-
-        # Add window size from XVFB_RESOLUTION
+        # Get window size from XVFB_RESOLUTION
         xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
         parts = xvfb_res.split("x")
-        if len(parts) >= 2:
-            args.append(f"--window-size={parts[0]},{parts[1]}")
-            args.append("--window-position=0,0")
+        width = int(parts[0]) if len(parts) >= 1 else 1920
+        height = int(parts[1]) if len(parts) >= 2 else 1080
 
-        launch_opts: dict[str, Any] = {
-            "user_data_dir": user_data_dir,
-            "headless": self.config.headless,
-            "no_viewport": True,  # Let browser size naturally from --start-maximized
-            "chromium_sandbox": False,
-            "args": args,
-        }
+        # Get a real Firefox UA from BrowserForge
+        from browserforge.fingerprints import FingerprintGenerator
 
-        if self.config.with_extensions:
-            launch_opts["ignore_default_args"] = [
-                "--disable-extensions",
-                "--disable-component-update",
-            ]
+        fp_gen = FingerprintGenerator(browser="firefox", os="linux")
+        fingerprint = fp_gen.generate()
+        user_agent = fingerprint.navigator.userAgent
 
-        if self.config.executable_path:
-            launch_opts["executable_path"] = self.config.executable_path
+        # Use system locale or default to en-US
+        locale = os.environ.get("LANG", "en_US.UTF-8").split(".")[0].replace("_", "-")
+        if locale == "C" or not locale:
+            locale = "en-US"
+
+        # Get timezone from TZ env var (set via docker -e TZ=Europe/Bucharest)
+        timezone_id = os.environ.get("TZ")
 
         try:
-            self._context = await self._playwright.chromium.launch_persistent_context(
-                **launch_opts
+            # Launch Camoufox Firefox directly - no fingerprint spoofing
+            # Just a clean Firefox that doesn't leak CDP
+            launch_args = {
+                "user_data_dir": self.config.user_data_dir or "",
+                "executable_path": launch_path(),
+                "headless": False,
+                "no_viewport": True,
+                "user_agent": user_agent,
+                "locale": locale,
+            }
+            # Only set timezone if explicitly configured (not UTC default)
+            if timezone_id and timezone_id != "UTC":
+                launch_args["timezone_id"] = timezone_id
+
+            self._context = await self._playwright.firefox.launch_persistent_context(**launch_args)
+            self._browser = self._context
+
+            # Resize window to fill Xvfb screen using xdotool
+            await asyncio.sleep(1)  # Wait for window to appear
+            # Find any window and resize it
+            result = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--name", ""],
+                capture_output=True,
+                text=True,
             )
+            for wid in result.stdout.strip().split("\n"):
+                if wid:
+                    subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
+                    subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
         except Exception as e:
             await self.stop()
             raise BrowserError(f"Failed to launch browser: {e}")
@@ -366,6 +308,6 @@ class Browser:
         await self.start()
         return self
 
-    async def __aexit__(self, *args: Any) -> None:
+    async def __aexit__(self, *_: Any) -> None:
         """Async context manager exit."""
         await self.stop()

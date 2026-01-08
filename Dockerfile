@@ -3,6 +3,14 @@ FROM python:3.12-slim
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Timezone - override with -e TZ=Your/Timezone
+ENV TZ=UTC
+
+# Install tzdata for proper timezone support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 # Base utils
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl gnupg ca-certificates \
@@ -18,27 +26,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
-# Browser dependencies
+# Firefox/Camoufox dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     libasound2 \
-    libatk-bridge2.0-0 \
     libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
+    libcairo2 \
     libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
+    libdbus-glib-1-2 \
+    libfontconfig1 \
+    libfreetype6 \
+    libgdk-pixbuf2.0-0 \
+    libglib2.0-0 \
     libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libwayland-client0 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
+    libxext6 \
     libxfixes3 \
-    libxkbcommon0 \
+    libxi6 \
     libxrandr2 \
-    libxcb-xinerama0 \
+    libxrender1 \
+    libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
 # UI automation tools
@@ -46,18 +60,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdotool scrot python3-tk python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Brave browser
-RUN curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-    https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] \
-    https://brave-browser-apt-release.s3.brave.com/ stable main" \
-    > /etc/apt/sources.list.d/brave-browser-release.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends brave-browser \
-    && rm -rf /var/lib/apt/lists/*
+# Install camoufox, pyautogui, and aiohttp
+RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp
 
-# Install patchright, pyautogui, and aiohttp
-RUN pip install --no-cache-dir patchright pyautogui aiohttp
+# Download Camoufox browser
+RUN python -m camoufox fetch
+
+# Copy scripts and install extensions
+COPY scripts/ /scripts/
+RUN python /scripts/install_extensions.py
 
 # Create directories for app and user data
 RUN mkdir -p /app /userdata
@@ -68,73 +79,8 @@ COPY app/ /app/
 # Set working directory
 WORKDIR /app
 
-# Create entrypoint script
-RUN cat > /entrypoint.sh << 'EOF'
-#!/bin/bash
-
-PIDS=()
-
-cleanup() {
-    echo ""
-    echo "[*] Shutting down..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null
-    done
-    wait
-    echo "[*] Done."
-    exit 0
-}
-
-trap cleanup SIGINT SIGTERM SIGHUP EXIT
-
-# Start Xvfb
-if [ -z "$DISPLAY" ] || [ "$DISPLAY" = ":99" ]; then
-    Xvfb :99 -screen 0 ${XVFB_RESOLUTION} -ac +extension GLX +render -noreset &
-    PIDS+=($!)
-    export DISPLAY=:99
-    sleep 0.5
-fi
-
-# Start x11vnc
-x11vnc -display :99 -rfbport 5901 -nopw -forever -shared -localhost &
-PIDS+=($!)
-sleep 0.3
-
-# Start noVNC
-websockify --web /usr/share/novnc 5900 localhost:5901 &
-PIDS+=($!)
-sleep 0.3
-
-# Start session API
-python main.py "$@" &
-SESSION_PID=$!
-PIDS+=($SESSION_PID)
-
-# Wait for API to be ready
-for i in {1..30}; do
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-        break
-    fi
-    sleep 0.2
-done
-
-# Banner
-echo ""
-echo "=============================================="
-echo "  STEALTHY AUTO-BROWSE"
-echo "=============================================="
-echo ""
-echo "  VNC:  http://localhost:5900/vnc.html"
-echo "  API:  http://localhost:8080"
-echo ""
-echo "  Ctrl+C to exit"
-echo "=============================================="
-echo ""
-
-# Wait for main.py to exit
-wait $SESSION_PID
-EOF
-
+# Copy entrypoint
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Environment variables

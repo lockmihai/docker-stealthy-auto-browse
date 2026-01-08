@@ -25,7 +25,6 @@ from aiohttp import web
 
 from browser import Browser, BrowserConfig
 
-
 # =============================================================================
 # LOGGING
 # =============================================================================
@@ -149,9 +148,7 @@ def human_click_at(x: int, y: int, move_duration: float | None = None) -> None:
     time.sleep(random.uniform(0.1, 0.3))
 
 
-def make_response(
-    success: bool, data: dict | None = None, error: str | None = None
-) -> dict:
+def make_response(success: bool, data: dict | None = None, error: str | None = None) -> dict:
     """Build response dict."""
     resp: dict = {"success": success, "timestamp": time.time()}
     if data:
@@ -215,9 +212,7 @@ async def handle_command(request: web.Request) -> web.Response:
             if x is None or y is None:
                 return web.json_response(make_response(False, error="x,y required"))
             human_move_mouse(int(x), int(y), cmd.get("duration"))
-            return web.json_response(
-                make_response(True, {"moved_to": {"x": x, "y": y}})
-            )
+            return web.json_response(make_response(True, {"moved_to": {"x": x, "y": y}}))
 
         if action == "mouse_click":
             assert pyautogui is not None
@@ -227,9 +222,7 @@ async def handle_command(request: web.Request) -> web.Response:
                 return web.json_response(make_response(True, {"clicked_at": "current"}))
             sx, sy = screen_coords(int(x), int(y))
             pyautogui.click(sx, sy)
-            return web.json_response(
-                make_response(True, {"clicked_at": {"x": x, "y": y}})
-            )
+            return web.json_response(make_response(True, {"clicked_at": {"x": x, "y": y}}))
 
         if action == "human_click":
             x, y = cmd.get("x"), cmd.get("y")
@@ -237,9 +230,7 @@ async def handle_command(request: web.Request) -> web.Response:
                 return web.json_response(make_response(False, error="x,y required"))
             human_click_at(int(x), int(y), cmd.get("duration"))
             await asyncio.sleep(0.3)
-            return web.json_response(
-                make_response(True, {"human_clicked": {"x": x, "y": y}})
-            )
+            return web.json_response(make_response(True, {"human_clicked": {"x": x, "y": y}}))
 
         if action == "scroll":
             assert pyautogui is not None
@@ -252,9 +243,7 @@ async def handle_command(request: web.Request) -> web.Response:
 
         if action == "calibrate":
             WINDOW_OFFSET = await get_window_offset_js(page)
-            return web.json_response(
-                make_response(True, {"window_offset": WINDOW_OFFSET})
-            )
+            return web.json_response(make_response(True, {"window_offset": WINDOW_OFFSET}))
 
         if action == "human_type":
             assert pyautogui is not None
@@ -304,13 +293,9 @@ async def handle_command(request: web.Request) -> web.Response:
 
         if action == "get_html":
             html = await page.content()
-            return web.json_response(
-                make_response(True, {"html": html, "length": len(html)})
-            )
+            return web.json_response(make_response(True, {"html": html, "length": len(html)}))
 
-        return web.json_response(
-            make_response(False, error=f"Unknown action: {action}")
-        )
+        return web.json_response(make_response(False, error=f"Unknown action: {action}"))
 
     except Exception as e:
         return web.json_response(make_response(False, error=str(e)))
@@ -371,8 +356,6 @@ async def main() -> None:
 
     config = BrowserConfig(
         user_data_dir="/userdata",
-        headless=False,
-        with_extensions=True,
     )
 
     log("Starting browser")

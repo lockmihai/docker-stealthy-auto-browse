@@ -1,19 +1,18 @@
 # docker-stealthy-auto-browse
 
-Stealth browser automation in a container. Brave + Patchright + Xvfb + PyAutoGUI running non-headless with real mouse/keyboard input.
+Stealth browser automation in a container. Camoufox + Xvfb + PyAutoGUI running non-headless with real mouse/keyboard input.
 
 ## Why?
 
-Standard browser automation gets detected. Headless browsers leak signals. Playwright's `navigator.webdriver` returns `true`. Bot detection services fingerprint everything.
+Standard browser automation gets detected. Headless browsers leak signals. Chrome DevTools Protocol (CDP) can be detected. Bot detection services fingerprint everything.
 
-This container runs a **real non-headless Brave browser** inside a virtual display with all the stealth patches applied. `navigator.webdriver` returns `false`, fingerprinting sees a normal browser, and PyAutoGUI generates real OS-level input events instead of DOM events.
+This container runs **Camoufox Firefox** with **zero CDP exposure**. Unlike Chromium-based solutions, there's no `Runtime.enable` leak to detect. No fingerprint spoofing = no inconsistencies to detect. Combined with PyAutoGUI for real OS-level input events.
 
 ## What's Inside
 
 | Component | Purpose |
 |-----------|---------|
-| **Brave Browser** | Privacy-focused browser with built-in fingerprint resistance |
-| **Patchright** | Playwright fork with anti-detection patches applied |
+| **Camoufox** | Custom Firefox build, no CDP leaks |
 | **Xvfb** | Virtual framebuffer - run non-headless without a physical display |
 | **noVNC** | Web-based VNC client to watch the browser remotely |
 | **PyAutoGUI + xdotool** | OS-level mouse/keyboard input (not DOM events) |
@@ -146,6 +145,14 @@ curl -X POST http://localhost:8080 \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `XVFB_RESOLUTION` | `1920x1080x24` | Virtual display resolution (WxHxDepth) |
+| `TZ` | `UTC` | Timezone (e.g., `Europe/Bucharest`, `America/New_York`). Set to match your IP location. |
+| `LANG` | `en_US.UTF-8` | Locale for browser language |
+
+**Important:** Set `TZ` to match your IP's geographic location to avoid detection. Example:
+
+```bash
+docker run -d -e TZ=Europe/Bucharest -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse
+```
 
 ## Persistent Profiles
 
@@ -159,6 +166,24 @@ docker run -d \
   psyb0t/stealthy-auto-browse
 ```
 
+## Browser Extensions
+
+The following extensions are **pre-installed** in the container:
+
+| Extension | Purpose |
+|-----------|---------|
+| **uBlock Origin** | Blocks ads, trackers, and annoyances |
+| **LocalCDN** | Serves common JS libraries locally (prevents CDN tracking) |
+| **ClearURLs** | Strips tracking parameters from URLs (utm_*, fbclid, etc.) |
+| **Consent-O-Matic** | Auto-handles cookie consent popups |
+
+Additional extensions can be installed via the persistent profile:
+
+1. Mount a profile directory: `-v ./my-profile:/userdata`
+2. Open VNC at `http://localhost:5900/vnc.html`
+3. Navigate to `about:addons` and install extensions
+4. Extensions persist across restarts
+
 ## VNC Access
 
 Watch the browser in real-time via noVNC:
@@ -169,19 +194,35 @@ docker run -d -p 5900:5900 psyb0t/stealthy-auto-browse
 
 Open `http://localhost:5900/vnc.html` and click Connect.
 
-## Known Issues
+## Bot Detection Test Results
 
-### Detection Limitations
+Tested against major bot detection services (January 2025):
 
-This handles basic detection vectors:
+| Site | Result | Notes |
+|------|--------|-------|
+| [SannySoft](https://bot.sannysoft.com/) | ✅ Pass | All Intoli + fingerprint scanner tests pass |
+| [Incolumitas](https://bot.incolumitas.com/) | ✅ Pass | All new detection tests OK |
+| [Rebrowser Bot Detector](https://bot-detector.rebrowser.net/) | ✅ Pass | No CDP leaks, no webdriver, viewport OK |
+| [CreepJS](https://abrahamjuliot.github.io/creepjs/) | ✅ Pass | 0% stealth detected, chromium: false |
+| [BrowserScan](https://www.browserscan.net/bot-detection) | ✅ Pass | WebDriver, CDP, Navigator all "Normal" |
+| [Pixelscan](https://pixelscan.net/) | ✅ Pass | Bot check passed (set TZ to match IP for full pass) |
+| [BrowserLeaks WebRTC](https://browserleaks.com/webrtc) | ✅ Pass | No WebRTC IP leak |
+| [DeviceAndBrowserInfo](https://deviceandbrowserinfo.com/are_you_a_bot) | ✅ Pass | "You are human!" - all 19 checks green |
+| [IpHey](https://iphey.com/) | ✅ Pass | "Trustworthy" rating |
+| [Fingerprint.com](https://fingerprint.com/demo/) | ✅ Pass | Identified as normal Firefox, no bot flags |
+
+### Why It Works
+
+- **No CDP exposure** - Camoufox is Firefox-based, no Chrome DevTools Protocol to detect
+- **No fingerprint spoofing** - Main context matches web workers (no inconsistencies)
 - `navigator.webdriver` returns `false`
-- JavaScript fingerprint checks pass
-- Basic bot detection is bypassed
+- Real OS-level input via PyAutoGUI (not DOM events)
 
-What this does NOT handle well (yet):
-- **Behavioral analysis** - The `human_click` and `human_type` actions are basic and will get flagged by serious behavioral analysis
-- **Canvas/WebGL fingerprinting** - Brave's shields help but aren't perfect
+### Known Limitations
+
+- **Behavioral analysis** - The `human_click` and `human_type` actions are basic
 - **ML-based detection** - Current implementation doesn't have realistic human patterns
+- **Timezone** - Set `TZ` env var to match your IP's location to avoid mismatch detection
 
 ## License
 
