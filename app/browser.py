@@ -258,7 +258,9 @@ class Browser:
             if timezone_id and timezone_id != "UTC":
                 launch_args["timezone_id"] = timezone_id
 
-            self._context = await self._playwright.firefox.launch_persistent_context(**launch_args)
+            self._context = await self._playwright.firefox.launch_persistent_context(
+                **launch_args
+            )
             self._browser = self._context
 
             # Resize window to fill Xvfb screen using xdotool
@@ -272,7 +274,9 @@ class Browser:
             for wid in result.stdout.strip().split("\n"):
                 if wid:
                     subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
-                    subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
+                    subprocess.run(
+                        ["xdotool", "windowsize", wid, str(width), str(height)]
+                    )
         except Exception as e:
             await self.stop()
             raise BrowserError(f"Failed to launch browser: {e}")

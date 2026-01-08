@@ -15,7 +15,7 @@ This container runs **Camoufox Firefox** with **zero CDP exposure**. Unlike Chro
 | **Camoufox** | Custom Firefox build, no CDP leaks |
 | **Xvfb** | Virtual framebuffer - run non-headless without a physical display |
 | **noVNC** | Web-based VNC client to watch the browser remotely |
-| **PyAutoGUI + xdotool** | OS-level mouse/keyboard input (not DOM events) |
+| **PyAutoGUI** | OS-level mouse/keyboard input (not DOM events) |
 | **HTTP API** | JSON API to control the browser remotely |
 
 ## Quick Start
@@ -44,7 +44,7 @@ docker run -d psyb0t/stealthy-auto-browse https://example.com
 - [Environment Variables](#environment-variables)
 - [Persistent Profiles](#persistent-profiles)
 - [VNC Access](#vnc-access)
-- [Known Issues](#known-issues)
+- [Known Limitations](#known-limitations)
 - [License](#license)
 
 ## HTTP API
@@ -56,7 +56,8 @@ The container exposes an HTTP API on port 8080.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | POST | Execute browser commands |
-| `/screenshot` | GET | Get current screenshot as PNG |
+| `/screenshot/browser` | GET | Get browser viewport screenshot as PNG |
+| `/screenshot/desktop` | GET | Get full desktop screenshot as PNG |
 | `/state` | GET | Get browser state as JSON |
 | `/health` | GET | Health check |
 
@@ -77,6 +78,16 @@ curl -X POST http://localhost:8080 \
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "human_type", "text": "hello world"}'
+
+# Send keyboard key (pyautogui)
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "send_key", "key": "enter"}'
+
+# Send key combo
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "send_key", "key": "ctrl+a"}'
 
 # Playwright click (CSS selector)
 curl -X POST http://localhost:8080 \
@@ -133,6 +144,7 @@ curl -X POST http://localhost:8080 \
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
 | `calibrate` | - | Get window offset for coordinate mapping |
 | `human_type` | `text`, `interval` | Human-like typing with delays |
+| `send_key` | `key` | Send keyboard key via pyautogui (e.g., `enter`, `backspace`, `ctrl+a`) |
 | `fill` | `selector`, `value` | Fill input field |
 | `type` | `selector`, `text`, `delay` | Type into element |
 | `eval` | `expression` | Execute JavaScript |

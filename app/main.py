@@ -6,24 +6,26 @@ Supports both Playwright (JS) clicks and PyAutoGUI (OS-level) clicks.
 PyAutoGUI clicks are undetectable by behavioral analysis.
 
 Endpoints:
-    POST /           - Execute command, returns JSON result
-    GET /screenshot  - Get current screenshot as PNG
-    GET /state       - Get browser state as JSON
-    GET /health      - Health check
+    POST /                  - Execute command, returns JSON result
+    GET /screenshot/browser - Get browser viewport screenshot as PNG
+    GET /screenshot/desktop - Get full desktop screenshot as PNG
+    GET /state              - Get browser state as JSON
+    GET /health             - Health check
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-import random
+import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
 from aiohttp import web
-
 from browser import Browser, BrowserConfig
+from system import System
 
 # =============================================================================
 # LOGGING
@@ -56,40 +58,14 @@ def log_response(success: bool, msg: str = "") -> None:
 # GLOBALS
 # =============================================================================
 
-# PyAutoGUI imported lazily after display is ready
-pyautogui = None
+# System-level input (pyautogui)
+system = System()
 
 # Global browser instance
 browser: Browser | None = None
 
-# Window offset for coordinate translation
-WINDOW_OFFSET = {"x": 0, "y": 0}
-
 PORT = 8080
 URL = sys.argv[1] if len(sys.argv) > 1 else None
-
-
-def init_pyautogui():
-    """Initialize pyautogui after X display is available."""
-    global pyautogui
-    if pyautogui is not None:
-        return
-
-    xauth_path = os.path.expanduser("~/.Xauthority")
-    if not os.path.exists(xauth_path):
-        open(xauth_path, "a").close()
-    os.environ.setdefault("XAUTHORITY", xauth_path)
-
-    import pyautogui as pag
-
-    pag.FAILSAFE = False
-    pag.PAUSE = 0
-    pyautogui = pag
-
-
-def screen_coords(x: int, y: int) -> tuple[int, int]:
-    """Convert viewport coords to screen coords."""
-    return (x + WINDOW_OFFSET["x"], y + WINDOW_OFFSET["y"])
 
 
 def get_active_page():
@@ -115,40 +91,9 @@ async def get_window_offset_js(page) -> dict:
         return {"x": 0, "y": 0}
 
 
-def human_move_mouse(x: int, y: int, duration: float | None = None) -> None:
-    """Move mouse with human-like behavior."""
-    assert pyautogui is not None
-    if duration is None:
-        duration = random.uniform(0.2, 0.6)
-
-    screen_x, screen_y = screen_coords(x, y)
-    jitter = random.randint(-3, 3)
-    target_x, target_y = screen_x + jitter, screen_y + jitter
-    current_x, current_y = pyautogui.position()
-
-    distance = ((target_x - current_x) ** 2 + (target_y - current_y) ** 2) ** 0.5
-    steps = max(int(distance / 50), 10)
-
-    for i in range(steps + 1):
-        t = 1 - (1 - i / steps) ** 2
-        jx = random.uniform(-1, 1) if i < steps else 0
-        jy = random.uniform(-1, 1) if i < steps else 0
-        new_x = current_x + (target_x - current_x) * t + jx
-        new_y = current_y + (target_y - current_y) * t + jy
-        pyautogui.moveTo(int(new_x), int(new_y), duration=0)
-        time.sleep(duration / steps)
-
-
-def human_click_at(x: int, y: int, move_duration: float | None = None) -> None:
-    """Move mouse humanly then click."""
-    assert pyautogui is not None
-    human_move_mouse(x, y, move_duration)
-    time.sleep(random.uniform(0.05, 0.15))
-    pyautogui.click()
-    time.sleep(random.uniform(0.1, 0.3))
-
-
-def make_response(success: bool, data: dict | None = None, error: str | None = None) -> dict:
+def make_response(
+    success: bool, data: dict | None = None, error: str | None = None
+) -> dict:
     """Build response dict."""
     resp: dict = {"success": success, "timestamp": time.time()}
     if data:
@@ -160,8 +105,6 @@ def make_response(success: bool, data: dict | None = None, error: str | None = N
 
 async def handle_command(request: web.Request) -> web.Response:
     """POST / - Execute a command."""
-    global WINDOW_OFFSET
-
     try:
         cmd = await request.json()
     except Exception as e:
@@ -211,53 +154,60 @@ async def handle_command(request: web.Request) -> web.Response:
             x, y = cmd.get("x"), cmd.get("y")
             if x is None or y is None:
                 return web.json_response(make_response(False, error="x,y required"))
-            human_move_mouse(int(x), int(y), cmd.get("duration"))
-            return web.json_response(make_response(True, {"moved_to": {"x": x, "y": y}}))
+            system.move_mouse(int(x), int(y), cmd.get("duration"))
+            return web.json_response(
+                make_response(True, {"moved_to": {"x": x, "y": y}})
+            )
 
         if action == "mouse_click":
-            assert pyautogui is not None
             x, y = cmd.get("x"), cmd.get("y")
+            system.click(int(x) if x else None, int(y) if y else None)
             if x is None or y is None:
-                pyautogui.click()
                 return web.json_response(make_response(True, {"clicked_at": "current"}))
-            sx, sy = screen_coords(int(x), int(y))
-            pyautogui.click(sx, sy)
-            return web.json_response(make_response(True, {"clicked_at": {"x": x, "y": y}}))
+            return web.json_response(
+                make_response(True, {"clicked_at": {"x": x, "y": y}})
+            )
 
         if action == "human_click":
             x, y = cmd.get("x"), cmd.get("y")
             if x is None or y is None:
                 return web.json_response(make_response(False, error="x,y required"))
-            human_click_at(int(x), int(y), cmd.get("duration"))
-            await asyncio.sleep(0.3)
-            return web.json_response(make_response(True, {"human_clicked": {"x": x, "y": y}}))
+            system.move_mouse(int(x), int(y), cmd.get("duration"))
+            system.click()
+            return web.json_response(
+                make_response(True, {"human_clicked": {"x": x, "y": y}})
+            )
 
         if action == "scroll":
-            assert pyautogui is not None
             amount = cmd.get("amount", -3)
             x, y = cmd.get("x"), cmd.get("y")
-            if x is not None and y is not None:
-                human_move_mouse(int(x), int(y))
-            pyautogui.scroll(int(amount))
+            system.scroll(
+                int(amount),
+                int(x) if x is not None else None,
+                int(y) if y is not None else None,
+            )
             return web.json_response(make_response(True, {"scrolled": amount}))
 
         if action == "calibrate":
-            WINDOW_OFFSET = await get_window_offset_js(page)
-            return web.json_response(make_response(True, {"window_offset": WINDOW_OFFSET}))
+            system.window_offset = await get_window_offset_js(page)
+            return web.json_response(
+                make_response(True, {"window_offset": system.window_offset})
+            )
 
         if action == "human_type":
-            assert pyautogui is not None
             text = cmd.get("text", "")
             interval = cmd.get("interval", 0.08)
             if not text:
                 return web.json_response(make_response(False, error="No text"))
-            for char in text:
-                if len(char) == 1:
-                    pyautogui.press(char)
-                else:
-                    pyautogui.typewrite(char)
-                time.sleep(max(0.02, interval + random.uniform(-0.03, 0.05)))
+            system.human_type(text, interval)
             return web.json_response(make_response(True, {"typed_len": len(text)}))
+
+        if action == "send_key":
+            key = cmd.get("key", "")
+            if not key:
+                return web.json_response(make_response(False, error="No key"))
+            system.send_key(key)
+            return web.json_response(make_response(True, {"send_key": key}))
 
         if action == "fill":
             selector, value = cmd.get("selector", ""), cmd.get("value", "")
@@ -293,22 +243,49 @@ async def handle_command(request: web.Request) -> web.Response:
 
         if action == "get_html":
             html = await page.content()
-            return web.json_response(make_response(True, {"html": html, "length": len(html)}))
+            return web.json_response(
+                make_response(True, {"html": html, "length": len(html)})
+            )
 
-        return web.json_response(make_response(False, error=f"Unknown action: {action}"))
+        return web.json_response(
+            make_response(False, error=f"Unknown action: {action}")
+        )
 
     except Exception as e:
         return web.json_response(make_response(False, error=str(e)))
 
 
-async def handle_screenshot(_request: web.Request) -> web.Response:
-    """GET /screenshot - Return PNG screenshot."""
+async def handle_screenshot_browser(_request: web.Request) -> web.Response:
+    """GET /screenshot/browser - Return browser viewport PNG screenshot."""
     page = get_active_page()
     if not page:
         return web.Response(status=503, text="No active page")
 
     try:
         data = await page.screenshot(type="png")
+        return web.Response(body=data, content_type="image/png")
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
+
+
+async def handle_screenshot_desktop(_request: web.Request) -> web.Response:
+    """GET /screenshot/desktop - Return full desktop PNG screenshot using scrot."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp_path = f.name
+
+        result = subprocess.run(
+            ["scrot", "-o", tmp_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return web.Response(status=500, text=f"scrot failed: {result.stderr}")
+
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+
+        os.unlink(tmp_path)
         return web.Response(body=data, content_type="image/png")
     except Exception as e:
         return web.Response(status=500, text=str(e))
@@ -325,7 +302,7 @@ async def handle_state(_request: web.Request) -> web.Response:
             "status": "ready" if page else "no_page",
             "url": browser.state.url,
             "title": browser.state.title,
-            "window_offset": WINDOW_OFFSET,
+            "window_offset": system.window_offset,
         }
     )
 
@@ -352,7 +329,7 @@ async def run_server(app: web.Application) -> None:
 
 
 async def main() -> None:
-    global browser, WINDOW_OFFSET
+    global browser
 
     config = BrowserConfig(
         user_data_dir="/userdata",
@@ -363,7 +340,8 @@ async def main() -> None:
     # Setup HTTP routes
     app = web.Application()
     app.router.add_post("/", handle_command)
-    app.router.add_get("/screenshot", handle_screenshot)
+    app.router.add_get("/screenshot/browser", handle_screenshot_browser)
+    app.router.add_get("/screenshot/desktop", handle_screenshot_desktop)
     app.router.add_get("/state", handle_state)
     app.router.add_get("/health", handle_health)
 
@@ -375,14 +353,14 @@ async def main() -> None:
         else:
             await browser._get_page()
 
-        init_pyautogui()
+        system.init()
         log("PyAutoGUI ready")
 
         await asyncio.sleep(1)
         page = get_active_page()
         if page:
-            WINDOW_OFFSET = await get_window_offset_js(page)
-        log(f"Window offset: {WINDOW_OFFSET}")
+            system.window_offset = await get_window_offset_js(page)
+        log(f"Window offset: {system.window_offset}")
 
         log("Browser ready")
 
