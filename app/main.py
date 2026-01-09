@@ -194,6 +194,27 @@ async def handle_command(request: web.Request) -> web.Response:
                 make_response(True, {"window_offset": system.window_offset})
             )
 
+        if action == "set_viewport":
+            width = cmd.get("width")
+            height = cmd.get("height")
+            if width is None or height is None:
+                return web.json_response(
+                    make_response(False, error="width and height required")
+                )
+            assert browser is not None
+            result = browser.set_viewport(int(width), int(height))
+            return web.json_response(make_response(True, result))
+
+        if action == "reset_viewport":
+            assert browser is not None
+            result = browser.reset_viewport()
+            return web.json_response(make_response(True, result))
+
+        if action == "get_viewport":
+            assert browser is not None
+            result = browser.get_viewport()
+            return web.json_response(make_response(True, result))
+
         if action == "human_type":
             text = cmd.get("text", "")
             interval = cmd.get("interval", 0.08)

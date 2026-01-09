@@ -124,6 +124,21 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "calibrate"}'
 
+# Set viewport size
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "set_viewport", "width": 1280, "height": 720}'
+
+# Reset viewport to original size
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "reset_viewport"}'
+
+# Get current viewport info
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_viewport"}'
+
 # Close browser
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
@@ -143,6 +158,9 @@ curl -X POST http://localhost:8080 \
 | `human_click` | `x`, `y`, `duration` | Human-like move + click |
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
 | `calibrate` | - | Get window offset for coordinate mapping |
+| `set_viewport` | `width`, `height` | Resize browser window |
+| `reset_viewport` | - | Reset browser window to original size |
+| `get_viewport` | - | Get current and original viewport dimensions |
 | `human_type` | `text`, `interval` | Human-like typing with delays |
 | `send_key` | `key` | Send keyboard key via pyautogui (e.g., `enter`, `backspace`, `ctrl+a`) |
 | `fill` | `selector`, `value` | Fill input field |

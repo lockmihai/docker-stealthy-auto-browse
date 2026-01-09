@@ -13,6 +13,15 @@ from typing import Any
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _get_default_viewport() -> tuple[int, int]:
+    """Get default viewport size from XVFB_RESOLUTION env var."""
+    xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
+    parts = xvfb_res.split("x")
+    width = int(parts[0]) if len(parts) >= 1 else 1920
+    height = int(parts[1]) if len(parts) >= 2 else 1080
+    return width, height
+
+
 class BrowserError(Exception):
     """Browser error."""
 
@@ -45,6 +54,11 @@ class Browser:
         self._context: Any = None
         self._page: Any = None
         self._state = BrowserState()
+        w, h = _get_default_viewport()
+        self._original_width: int = w
+        self._original_height: int = h
+        self._current_width: int = w
+        self._current_height: int = h
 
     @property
     def state(self) -> BrowserState:
@@ -215,6 +229,36 @@ class Browser:
 
         return await self._page.evaluate(js_code, visible_only)
 
+    def set_viewport(self, width: int, height: int) -> dict:
+        """Resize browser window to specified dimensions."""
+        result = subprocess.run(
+            ["xdotool", "search", "--onlyvisible", "--name", ""],
+            capture_output=True,
+            text=True,
+        )
+        for wid in result.stdout.strip().split("\n"):
+            if not wid:
+                continue
+            subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
+            subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
+
+        self._current_width = width
+        self._current_height = height
+        return {"width": width, "height": height}
+
+    def reset_viewport(self) -> dict:
+        """Reset browser window to original dimensions."""
+        return self.set_viewport(self._original_width, self._original_height)
+
+    def get_viewport(self) -> dict:
+        """Get current viewport dimensions."""
+        return {
+            "width": self._current_width,
+            "height": self._current_height,
+            "original_width": self._original_width,
+            "original_height": self._original_height,
+        }
+
     async def _launch_browser(self) -> None:
         """Launch Camoufox Firefox directly via Playwright (no fingerprint spoofing)."""
         from camoufox.pkgman import launch_path
@@ -223,10 +267,11 @@ class Browser:
         self._playwright = await async_playwright().start()
 
         # Get window size from XVFB_RESOLUTION
-        xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
-        parts = xvfb_res.split("x")
-        width = int(parts[0]) if len(parts) >= 1 else 1920
-        height = int(parts[1]) if len(parts) >= 2 else 1080
+        width, height = _get_default_viewport()
+        self._original_width = width
+        self._original_height = height
+        self._current_width = width
+        self._current_height = height
 
         # Get a real Firefox UA from BrowserForge
         from browserforge.fingerprints import FingerprintGenerator
