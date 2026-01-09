@@ -124,20 +124,20 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "calibrate"}'
 
-# Set viewport size
+# Set display resolution
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "set_viewport", "width": 1280, "height": 720}'
+  -d '{"action": "set_resolution", "width": 1280, "height": 720}'
 
-# Reset viewport to original size
+# Reset display resolution to original
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "reset_viewport"}'
+  -d '{"action": "reset_resolution"}'
 
-# Get current viewport info
+# Get current resolution info
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "get_viewport"}'
+  -d '{"action": "get_resolution"}'
 
 # Close browser
 curl -X POST http://localhost:8080 \
@@ -158,9 +158,11 @@ curl -X POST http://localhost:8080 \
 | `human_click` | `x`, `y`, `duration` | Human-like move + click |
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
 | `calibrate` | - | Get window offset for coordinate mapping |
-| `set_viewport` | `width`, `height` | Resize browser window |
-| `reset_viewport` | - | Reset browser window to original size |
-| `get_viewport` | - | Get current and original viewport dimensions |
+| `set_resolution` | `width`, `height` | Change display resolution (width < 450 requires `USE_VIEWPORT=true`) |
+| `reset_resolution` | - | Reset display to original resolution |
+| `get_resolution` | - | Get current and original display resolution |
+| `enter_fullscreen` | - | Enter browser fullscreen mode (hides browser chrome) |
+| `exit_fullscreen` | - | Exit browser fullscreen mode |
 | `human_type` | `text`, `interval` | Human-like typing with delays |
 | `send_key` | `key` | Send keyboard key via pyautogui (e.g., `enter`, `backspace`, `ctrl+a`) |
 | `fill` | `selector`, `value` | Fill input field |
@@ -174,14 +176,26 @@ curl -X POST http://localhost:8080 \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XVFB_RESOLUTION` | `1920x1080x24` | Virtual display resolution (WxHxDepth) |
+| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution (WxH, max 1920x1080) |
+| `XVFB_DEPTH` | `24` | Color depth (16, 24, or 32) |
 | `TZ` | `UTC` | Timezone (e.g., `Europe/Bucharest`, `America/New_York`). Set to match your IP location. |
 | `LANG` | `en_US.UTF-8` | Locale for browser language |
+| `USE_VIEWPORT` | `false` | Enable Playwright viewport control. Required for resolutions < 450px width (mobile). **Warning:** May reduce stealth - only use for targets that don't need maximum stealth. |
 
 **Important:** Set `TZ` to match your IP's geographic location to avoid detection. Example:
 
 ```bash
 docker run -d -e TZ=Europe/Bucharest -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse
+```
+
+**Mobile viewport example** (for testing mobile layouts on sites that don't need stealth):
+
+```bash
+docker run -d \
+  -e USE_VIEWPORT=true \
+  -e XVFB_RESOLUTION=375x812 \
+  -p 8080:8080 -p 5900:5900 \
+  psyb0t/stealthy-auto-browse
 ```
 
 ## Persistent Profiles

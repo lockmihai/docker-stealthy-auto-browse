@@ -194,25 +194,51 @@ async def handle_command(request: web.Request) -> web.Response:
                 make_response(True, {"window_offset": system.window_offset})
             )
 
-        if action == "set_viewport":
+        if action == "enter_fullscreen":
+            is_fullscreen = await page.evaluate("!!document.fullscreenElement")
+            if not is_fullscreen:
+                await page.evaluate("document.documentElement.requestFullscreen()")
+            return web.json_response(
+                make_response(True, {"fullscreen": True, "changed": not is_fullscreen})
+            )
+
+        if action == "exit_fullscreen":
+            is_fullscreen = await page.evaluate("!!document.fullscreenElement")
+            if is_fullscreen:
+                await page.evaluate("document.exitFullscreen()")
+            return web.json_response(
+                make_response(True, {"fullscreen": False, "changed": is_fullscreen})
+            )
+
+        if action == "set_resolution":
             width = cmd.get("width")
             height = cmd.get("height")
             if width is None or height is None:
                 return web.json_response(
                     make_response(False, error="width and height required")
                 )
-            assert browser is not None
-            result = browser.set_viewport(int(width), int(height))
+            use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
+            if int(width) < 450 and not use_viewport:
+                return web.json_response(
+                    make_response(False, error="width < 450 requires USE_VIEWPORT=true")
+                )
+            result = system.set_resolution(int(width), int(height))
+            if use_viewport:
+                await page.set_viewport_size(
+                    {"width": int(width), "height": int(height)}
+                )
             return web.json_response(make_response(True, result))
 
-        if action == "reset_viewport":
-            assert browser is not None
-            result = browser.reset_viewport()
+        if action == "reset_resolution":
+            result = system.reset_resolution()
+            if os.environ.get("USE_VIEWPORT", "").lower() == "true":
+                await page.set_viewport_size(
+                    {"width": result["width"], "height": result["height"]}
+                )
             return web.json_response(make_response(True, result))
 
-        if action == "get_viewport":
-            assert browser is not None
-            result = browser.get_viewport()
+        if action == "get_resolution":
+            result = system.get_resolution()
             return web.json_response(make_response(True, result))
 
         if action == "human_type":
@@ -352,9 +378,7 @@ async def run_server(app: web.Application) -> None:
 async def main() -> None:
     global browser
 
-    config = BrowserConfig(
-        user_data_dir="/userdata",
-    )
+    config = BrowserConfig()
 
     log("Starting browser")
 

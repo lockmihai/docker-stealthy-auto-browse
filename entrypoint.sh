@@ -15,12 +15,28 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM SIGHUP EXIT
 
-# Start Xvfb
+# Start Xvfb (Full HD max, can resize down via API)
 if [ -z "$DISPLAY" ] || [ "$DISPLAY" = ":99" ]; then
-    Xvfb :99 -screen 0 ${XVFB_RESOLUTION} -ac +extension GLX +render -noreset &
+    DEPTH="${XVFB_DEPTH:-24}"
+    Xvfb :99 -screen 0 1920x1080x${DEPTH} -ac +extension GLX +render -noreset &
     PIDS+=($!)
     export DISPLAY=:99
     sleep 0.5
+
+    # Resize to XVFB_RESOLUTION if set to something other than 1920x1080
+    TARGET_RES="${XVFB_RESOLUTION:-1920x1080}"
+    if [[ "$TARGET_RES" != "1920x1080" ]]; then
+        TARGET_W="${TARGET_RES%%x*}"
+        TARGET_H="${TARGET_RES#*x}"
+        MODELINE=$(cvt "$TARGET_W" "$TARGET_H" 60 2>/dev/null | grep Modeline)
+        if [ -n "$MODELINE" ]; then
+            MODE_NAME=$(echo "$MODELINE" | sed 's/.*"\([^"]*\)".*/\1/')
+            MODE_PARAMS=$(echo "$MODELINE" | sed 's/.*"[^"]*"  *//')
+            xrandr --newmode "$MODE_NAME" $MODE_PARAMS 2>/dev/null || true
+            xrandr --addmode screen "$MODE_NAME" 2>/dev/null || true
+            xrandr -s "$MODE_NAME" 2>/dev/null || true
+        fi
+    fi
 fi
 
 # Start x11vnc

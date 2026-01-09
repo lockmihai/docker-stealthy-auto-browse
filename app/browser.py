@@ -12,13 +12,16 @@ from typing import Any
 # Path to JS files
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Default user data directory
+DEFAULT_USER_DATA_DIR = "/userdata"
+
 
 def _get_default_viewport() -> tuple[int, int]:
-    """Get default viewport size from XVFB_RESOLUTION env var."""
-    xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080x24")
+    """Get default viewport size from XVFB_RESOLUTION env var (WxH format)."""
+    xvfb_res = os.environ.get("XVFB_RESOLUTION", "1920x1080")
     parts = xvfb_res.split("x")
-    width = int(parts[0]) if len(parts) >= 1 else 1920
-    height = int(parts[1]) if len(parts) >= 2 else 1080
+    width = int(parts[0]) if parts else 1920
+    height = int(parts[1]) if len(parts) > 1 else 1080
     return width, height
 
 
@@ -41,7 +44,6 @@ class BrowserConfig:
     """Browser configuration."""
 
     timeout: float = 30.0
-    user_data_dir: str | None = None  # None = temp dir
 
 
 class Browser:
@@ -54,11 +56,6 @@ class Browser:
         self._context: Any = None
         self._page: Any = None
         self._state = BrowserState()
-        w, h = _get_default_viewport()
-        self._original_width: int = w
-        self._original_height: int = h
-        self._current_width: int = w
-        self._current_height: int = h
 
     @property
     def state(self) -> BrowserState:
@@ -229,36 +226,6 @@ class Browser:
 
         return await self._page.evaluate(js_code, visible_only)
 
-    def set_viewport(self, width: int, height: int) -> dict:
-        """Resize browser window to specified dimensions."""
-        result = subprocess.run(
-            ["xdotool", "search", "--onlyvisible", "--name", ""],
-            capture_output=True,
-            text=True,
-        )
-        for wid in result.stdout.strip().split("\n"):
-            if not wid:
-                continue
-            subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
-            subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
-
-        self._current_width = width
-        self._current_height = height
-        return {"width": width, "height": height}
-
-    def reset_viewport(self) -> dict:
-        """Reset browser window to original dimensions."""
-        return self.set_viewport(self._original_width, self._original_height)
-
-    def get_viewport(self) -> dict:
-        """Get current viewport dimensions."""
-        return {
-            "width": self._current_width,
-            "height": self._current_height,
-            "original_width": self._original_width,
-            "original_height": self._original_height,
-        }
-
     async def _launch_browser(self) -> None:
         """Launch Camoufox Firefox directly via Playwright (no fingerprint spoofing)."""
         from camoufox.pkgman import launch_path
@@ -268,10 +235,6 @@ class Browser:
 
         # Get window size from XVFB_RESOLUTION
         width, height = _get_default_viewport()
-        self._original_width = width
-        self._original_height = height
-        self._current_width = width
-        self._current_height = height
 
         # Get a real Firefox UA from BrowserForge
         from browserforge.fingerprints import FingerprintGenerator
@@ -289,16 +252,23 @@ class Browser:
         timezone_id = os.environ.get("TZ")
 
         try:
-            # Launch Camoufox Firefox directly - no fingerprint spoofing
-            # Just a clean Firefox that doesn't leak CDP
+            # Check if viewport should be enforced (needed for <450px widths)
+            use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
+
+            if width < 450 and not use_viewport:
+                raise BrowserError(f"Width {width} < 450 requires USE_VIEWPORT=true")
+
             launch_args = {
-                "user_data_dir": self.config.user_data_dir or "",
+                "user_data_dir": DEFAULT_USER_DATA_DIR,
                 "executable_path": launch_path(),
                 "headless": False,
-                "no_viewport": True,
                 "user_agent": user_agent,
                 "locale": locale,
             }
+
+            launch_args["no_viewport"] = not use_viewport
+            if use_viewport:
+                launch_args["viewport"] = {"width": width, "height": height}
             # Only set timezone if explicitly configured (not UTC default)
             if timezone_id and timezone_id != "UTC":
                 launch_args["timezone_id"] = timezone_id

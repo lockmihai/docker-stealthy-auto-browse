@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # X11 and display
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb xauth dbus dbus-x11 \
+    xvfb xauth dbus dbus-x11 x11-xserver-utils xcvt \
     && rm -rf /var/lib/apt/lists/*
 
 # VNC
@@ -64,7 +64,8 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Environment variables
-ENV XVFB_RESOLUTION=1920x1080x24
+ENV XVFB_RESOLUTION=1920x1080
+ENV XVFB_DEPTH=24
 
 # Expose ports (VNC and session HTTP)
 EXPOSE 5900 8080
