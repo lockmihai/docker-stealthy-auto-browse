@@ -69,15 +69,15 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "goto", "url": "https://example.com"}'
 
-# Human-like click (real mouse movement + click)
+# System-level click (PyAutoGUI mouse movement + click)
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "human_click", "x": 500, "y": 300}'
+  -d '{"action": "system_click", "x": 500, "y": 300}'
 
-# Human-like typing (variable delays between keys)
+# System-level typing (PyAutoGUI with variable delays)
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "human_type", "text": "hello world"}'
+  -d '{"action": "system_type", "text": "hello world"}'
 
 # Send keyboard key (pyautogui)
 curl -X POST http://localhost:8080 \
@@ -155,7 +155,7 @@ curl -X POST http://localhost:8080 \
 | `click` | `selector` | Playwright click (DOM event) |
 | `mouse_move` | `x`, `y`, `duration` | Human-like mouse movement |
 | `mouse_click` | `x`, `y` (optional) | PyAutoGUI click (OS-level) |
-| `human_click` | `x`, `y`, `duration` | Human-like move + click |
+| `system_click` | `x`, `y`, `duration` | PyAutoGUI move + click |
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
 | `calibrate` | - | Get window offset for coordinate mapping |
 | `set_resolution` | `width`, `height` | Change display resolution (width < 450 requires `USE_VIEWPORT=true`) |
@@ -163,7 +163,7 @@ curl -X POST http://localhost:8080 \
 | `get_resolution` | - | Get current and original display resolution |
 | `enter_fullscreen` | - | Enter browser fullscreen mode (hides browser chrome) |
 | `exit_fullscreen` | - | Exit browser fullscreen mode |
-| `human_type` | `text`, `interval` | Human-like typing with delays |
+| `system_type` | `text`, `interval` | PyAutoGUI typing with variable delays |
 | `send_key` | `key` | Send keyboard key via pyautogui (e.g., `enter`, `backspace`, `ctrl+a`) |
 | `fill` | `selector`, `value` | Fill input field |
 | `type` | `selector`, `text`, `delay` | Type into element |

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # Path to JS files
@@ -14,6 +16,9 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Default user data directory
 DEFAULT_USER_DATA_DIR = "/userdata"
+
+# Persisted browser properties file (stores Camoufox config, not raw fingerprint)
+BROWSER_PROPS_FILE = Path(DEFAULT_USER_DATA_DIR) / "stealthy-auto-browse-props.json"
 
 
 def _get_default_viewport() -> tuple[int, int]:
@@ -23,6 +28,60 @@ def _get_default_viewport() -> tuple[int, int]:
     width = int(parts[0]) if parts else 1920
     height = int(parts[1]) if len(parts) > 1 else 1080
     return width, height
+
+
+def _load_persisted_config() -> dict[str, Any] | None:
+    """Load persisted Camoufox config from file if exists."""
+    if not BROWSER_PROPS_FILE.exists():
+        return None
+
+    try:
+        with open(BROWSER_PROPS_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _save_config(config: dict[str, Any]) -> None:
+    """Save Camoufox config to file for persistence."""
+    BROWSER_PROPS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(BROWSER_PROPS_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def _generate_camoufox_config(screen_width: int, screen_height: int) -> dict[str, Any]:
+    """Generate a Camoufox config with realistic Linux Firefox fingerprint."""
+    from browserforge.fingerprints import FingerprintGenerator, Screen
+    from camoufox.fingerprints import from_browserforge
+    from camoufox.pkgman import installed_verstr
+
+    # Use screen constraints to match our Xvfb resolution
+    screen_constraints = Screen(
+        min_width=screen_width,
+        max_width=screen_width,
+        min_height=screen_height,
+        max_height=screen_height,
+    )
+
+    fp_gen = FingerprintGenerator(browser="firefox", os="linux")
+    fp = fp_gen.generate(screen=screen_constraints)
+
+    # Adjust screen/window to match our actual display
+    fp.screen.width = screen_width
+    fp.screen.height = screen_height
+    fp.screen.availWidth = screen_width
+    fp.screen.availHeight = screen_height
+    fp.screen.outerWidth = screen_width
+    fp.screen.outerHeight = screen_height
+    fp.screen.innerWidth = screen_width
+    fp.screen.innerHeight = screen_height - 80  # Account for browser chrome
+    fp.screen.screenX = 0
+    fp.screen.availTop = 0
+    fp.screen.availLeft = 0
+
+    # Convert to Camoufox config format
+    ff_version = installed_verstr().split(".", 1)[0]
+    return from_browserforge(fp, ff_version)
 
 
 class BrowserError(Exception):
@@ -227,8 +286,8 @@ class Browser:
         return await self._page.evaluate(js_code, visible_only)
 
     async def _launch_browser(self) -> None:
-        """Launch Camoufox Firefox directly via Playwright (no fingerprint spoofing)."""
-        from camoufox.pkgman import launch_path
+        """Launch Camoufox with proper C++ level fingerprint injection."""
+        from camoufox.utils import launch_options
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
@@ -236,12 +295,11 @@ class Browser:
         # Get window size from XVFB_RESOLUTION
         width, height = _get_default_viewport()
 
-        # Get a real Firefox UA from BrowserForge
-        from browserforge.fingerprints import FingerprintGenerator
-
-        fp_gen = FingerprintGenerator(browser="firefox", os="linux")
-        fingerprint = fp_gen.generate()
-        user_agent = fingerprint.navigator.userAgent
+        # Load or generate Camoufox config
+        config = _load_persisted_config()
+        if config is None:
+            config = _generate_camoufox_config(width, height)
+            _save_config(config)
 
         # Use system locale or default to en-US
         locale = os.environ.get("LANG", "en_US.UTF-8").split(".")[0].replace("_", "-")
@@ -252,46 +310,49 @@ class Browser:
         timezone_id = os.environ.get("TZ")
 
         try:
-            # Check if viewport should be enforced (needed for <450px widths)
-            use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
+            # Build launch options with proper fingerprint injection
+            # This generates env vars with CAMOU_CONFIG_* for C++ level spoofing
+            opts = launch_options(
+                config=config,  # Pass our persisted config directly
+                os="linux",
+                headless=False,
+                locale=locale,
+                humanize=True,  # Human-like mouse movement
+                i_know_what_im_doing=True,  # We're using our persisted config
+            )
 
+            # Add persistent context settings
+            opts["user_data_dir"] = DEFAULT_USER_DATA_DIR
+
+            # Handle viewport
+            use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
             if width < 450 and not use_viewport:
                 raise BrowserError(f"Width {width} < 450 requires USE_VIEWPORT=true")
 
-            launch_args = {
-                "user_data_dir": DEFAULT_USER_DATA_DIR,
-                "executable_path": launch_path(),
-                "headless": False,
-                "user_agent": user_agent,
-                "locale": locale,
-            }
-
-            launch_args["no_viewport"] = not use_viewport
             if use_viewport:
-                launch_args["viewport"] = {"width": width, "height": height}
-            # Only set timezone if explicitly configured (not UTC default)
-            if timezone_id and timezone_id != "UTC":
-                launch_args["timezone_id"] = timezone_id
+                opts["viewport"] = {"width": width, "height": height}
+            else:
+                opts["no_viewport"] = True
 
-            self._context = await self._playwright.firefox.launch_persistent_context(
-                **launch_args
-            )
+            # Set timezone if explicitly configured
+            if timezone_id and timezone_id != "UTC":
+                opts["timezone_id"] = timezone_id
+
+            self._context = await self._playwright.firefox.launch_persistent_context(**opts)
             self._browser = self._context
 
             # Resize window to fill Xvfb screen using xdotool
             await asyncio.sleep(1)  # Wait for window to appear
-            # Find any window and resize it
             result = subprocess.run(
                 ["xdotool", "search", "--onlyvisible", "--name", ""],
                 capture_output=True,
                 text=True,
             )
             for wid in result.stdout.strip().split("\n"):
-                if wid:
-                    subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
-                    subprocess.run(
-                        ["xdotool", "windowsize", wid, str(width), str(height)]
-                    )
+                if not wid:
+                    continue
+                subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
+                subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
         except Exception as e:
             await self.stop()
             raise BrowserError(f"Failed to launch browser: {e}")

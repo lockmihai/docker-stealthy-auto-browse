@@ -122,8 +122,8 @@ class System:
 
         self._pyautogui.press(key)
 
-    def human_type(self, text: str, interval: float = 0.08) -> None:
-        """Type text with human-like delays."""
+    def system_type(self, text: str, interval: float = 0.08) -> None:
+        """Type text via PyAutoGUI with variable delays."""
         if not self._pyautogui:
             return
 
@@ -162,9 +162,7 @@ class System:
                     continue
                 cvt_mode_name = parts[1]  # e.g., "375x667_60.00"
                 modeline_params = parts[2].strip()  # everything after closing quote
-                subprocess.run(
-                    ["xrandr", "--newmode", cvt_mode_name, *modeline_params.split()]
-                )
+                subprocess.run(["xrandr", "--newmode", cvt_mode_name, *modeline_params.split()])
                 subprocess.run(["xrandr", "--addmode", "screen", cvt_mode_name])
                 mode_name = cvt_mode_name
                 break
