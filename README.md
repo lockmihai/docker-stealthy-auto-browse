@@ -275,12 +275,6 @@ Tested against major bot detection services (January 2025):
 - `navigator.webdriver` returns `false`
 - Real OS-level input via PyAutoGUI (not DOM events)
 
-### Known Limitations
-
-- **Behavioral analysis** - The `human_click` and `human_type` actions are basic
-- **ML-based detection** - Current implementation doesn't have realistic human patterns
-- **Timezone** - Set `TZ` env var to match your IP's location to avoid mismatch detection
-
 ## License
 
 **WTFPL** - Do What The Fuck You Want To Public License
