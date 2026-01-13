@@ -2,6 +2,21 @@
 
 Stealth browser automation in a container. Camoufox + Xvfb + PyAutoGUI running non-headless with real mouse/keyboard input.
 
+## Table of Contents
+
+- [Why?](#why)
+- [What's Inside](#whats-inside)
+- [Quick Start](#quick-start)
+- [Claude Code Integration](#claude-code-integration)
+- [HTTP API](#http-api)
+- [Actions Reference](#actions-reference)
+- [Environment Variables](#environment-variables)
+- [Persistent Profiles](#persistent-profiles)
+- [Browser Extensions](#browser-extensions)
+- [VNC Access](#vnc-access)
+- [Bot Detection Test Results](#bot-detection-test-results)
+- [License](#license)
+
 ## Why?
 
 Standard browser automation gets detected. Headless browsers leak signals. Chrome DevTools Protocol (CDP) can be detected. Bot detection services fingerprint everything.
@@ -37,15 +52,13 @@ Open a URL on startup:
 docker run -d psyb0t/stealthy-auto-browse https://example.com
 ```
 
-## Table of Contents
+## Claude Code Integration
 
-- [HTTP API](#http-api)
-- [Actions Reference](#actions-reference)
-- [Environment Variables](#environment-variables)
-- [Persistent Profiles](#persistent-profiles)
-- [VNC Access](#vnc-access)
-- [Known Limitations](#known-limitations)
-- [License](#license)
+This container works great with [Claude Code](https://claude.ai/code). Claude can launch the browser, navigate pages, read content, click elements, and fill forms - all through the HTTP API.
+
+For a ready-to-use Claude Code setup, check out [docker-claude-code](https://github.com/psyb0t/docker-claude-code).
+
+See [`.claude/INSTRUCTIONS.md`](.claude/INSTRUCTIONS.md) for the full guide Claude uses to control the browser.
 
 ## HTTP API
 
