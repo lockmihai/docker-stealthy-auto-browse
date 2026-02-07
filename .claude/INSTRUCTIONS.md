@@ -117,12 +117,6 @@ curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
   -d '{"action": "eval", "expression": "document.title"}'
 ```
 
-**Change resolution:**
-```bash
-curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
-  -d '{"action": "set_resolution", "width": 1280, "height": 720}'
-```
-
 ## Typical Workflow
 
 1. `goto` the URL

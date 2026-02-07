@@ -51,20 +51,14 @@ def _save_config(config: dict[str, Any]) -> None:
 
 def _generate_camoufox_config(screen_width: int, screen_height: int) -> dict[str, Any]:
     """Generate a Camoufox config with realistic Linux Firefox fingerprint."""
-    from browserforge.fingerprints import FingerprintGenerator, Screen
+    from browserforge.fingerprints import FingerprintGenerator
     from camoufox.fingerprints import from_browserforge
     from camoufox.pkgman import installed_verstr
 
-    # Use screen constraints to match our Xvfb resolution
-    screen_constraints = Screen(
-        min_width=screen_width,
-        max_width=screen_width,
-        min_height=screen_height,
-        max_height=screen_height,
-    )
-
+    # Generate without screen constraints so browserforge succeeds for any resolution.
+    # We override fp.screen.* values below to match our actual Xvfb display.
     fp_gen = FingerprintGenerator(browser="firefox", os="linux")
-    fp = fp_gen.generate(screen=screen_constraints)
+    fp = fp_gen.generate()
 
     # Adjust screen/window to match our actual display
     fp.screen.width = screen_width
@@ -287,6 +281,7 @@ class Browser:
 
     async def _launch_browser(self) -> None:
         """Launch Camoufox with proper C++ level fingerprint injection."""
+        from browserforge.fingerprints import Screen
         from camoufox.utils import launch_options
         from playwright.async_api import async_playwright
 
@@ -312,8 +307,18 @@ class Browser:
         try:
             # Build launch options with proper fingerprint injection
             # This generates env vars with CAMOU_CONFIG_* for C++ level spoofing
+            # Use permissive screen constraints so browserforge's internal
+            # fingerprint generation doesn't fail for small Xvfb resolutions.
+            # Our persisted config values take precedence via merge_into.
+            screen = Screen(
+                min_width=1024,
+                max_width=1920,
+                min_height=768,
+                max_height=1080,
+            )
             opts = launch_options(
                 config=config,  # Pass our persisted config directly
+                screen=screen,
                 os="linux",
                 headless=False,
                 locale=locale,
@@ -326,9 +331,6 @@ class Browser:
 
             # Handle viewport
             use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
-            if width < 450 and not use_viewport:
-                raise BrowserError(f"Width {width} < 450 requires USE_VIEWPORT=true")
-
             if use_viewport:
                 opts["viewport"] = {"width": width, "height": height}
             else:
@@ -338,7 +340,9 @@ class Browser:
             if timezone_id and timezone_id != "UTC":
                 opts["timezone_id"] = timezone_id
 
-            self._context = await self._playwright.firefox.launch_persistent_context(**opts)
+            self._context = await self._playwright.firefox.launch_persistent_context(
+                **opts
+            )
             self._browser = self._context
 
             # Resize window to fill Xvfb screen using xdotool

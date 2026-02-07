@@ -254,26 +254,12 @@ curl $STEALTHY_AUTO_BROWSE_URL/screenshot/browser -o screenshot.png
 { "action": "calibrate" }
 ```
 
-### Resolution Control
-
-**set_resolution** - Change display resolution
-
-```json
-{ "action": "set_resolution", "width": 1920, "height": 1080 }
-```
-
-Note: Width < 450 requires `USE_VIEWPORT=true` environment variable
+### Resolution
 
 **get_resolution** - Get current resolution
 
 ```json
 { "action": "get_resolution" }
-```
-
-**reset_resolution** - Reset to original resolution
-
-```json
-{ "action": "reset_resolution" }
 ```
 
 ### Fullscreen

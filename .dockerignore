@@ -10,3 +10,4 @@ app/.mypy_cache
 *.md
 LICENSE
 Makefile
+.testdata

@@ -91,7 +91,9 @@ async def get_window_offset_js(page) -> dict:
         return {"x": 0, "y": 0}
 
 
-def make_response(success: bool, data: dict | None = None, error: str | None = None) -> dict:
+def make_response(
+    success: bool, data: dict | None = None, error: str | None = None
+) -> dict:
     """Build response dict."""
     resp: dict = {"success": success, "timestamp": time.time()}
     if data:
@@ -153,14 +155,18 @@ async def handle_command(request: web.Request) -> web.Response:
             if x is None or y is None:
                 return web.json_response(make_response(False, error="x,y required"))
             system.move_mouse(int(x), int(y), cmd.get("duration"))
-            return web.json_response(make_response(True, {"moved_to": {"x": x, "y": y}}))
+            return web.json_response(
+                make_response(True, {"moved_to": {"x": x, "y": y}})
+            )
 
         if action == "mouse_click":
             x, y = cmd.get("x"), cmd.get("y")
             system.click(int(x) if x else None, int(y) if y else None)
             if x is None or y is None:
                 return web.json_response(make_response(True, {"clicked_at": "current"}))
-            return web.json_response(make_response(True, {"clicked_at": {"x": x, "y": y}}))
+            return web.json_response(
+                make_response(True, {"clicked_at": {"x": x, "y": y}})
+            )
 
         if action == "system_click":
             x, y = cmd.get("x"), cmd.get("y")
@@ -168,7 +174,9 @@ async def handle_command(request: web.Request) -> web.Response:
                 return web.json_response(make_response(False, error="x,y required"))
             system.move_mouse(int(x), int(y), cmd.get("duration"))
             system.click()
-            return web.json_response(make_response(True, {"system_clicked": {"x": x, "y": y}}))
+            return web.json_response(
+                make_response(True, {"system_clicked": {"x": x, "y": y}})
+            )
 
         if action == "scroll":
             amount = cmd.get("amount", -3)
@@ -182,7 +190,9 @@ async def handle_command(request: web.Request) -> web.Response:
 
         if action == "calibrate":
             system.window_offset = await get_window_offset_js(page)
-            return web.json_response(make_response(True, {"window_offset": system.window_offset}))
+            return web.json_response(
+                make_response(True, {"window_offset": system.window_offset})
+            )
 
         if action == "enter_fullscreen":
             is_fullscreen = await page.evaluate("!!document.fullscreenElement")
@@ -199,27 +209,6 @@ async def handle_command(request: web.Request) -> web.Response:
             return web.json_response(
                 make_response(True, {"fullscreen": False, "changed": is_fullscreen})
             )
-
-        if action == "set_resolution":
-            width = cmd.get("width")
-            height = cmd.get("height")
-            if width is None or height is None:
-                return web.json_response(make_response(False, error="width and height required"))
-            use_viewport = os.environ.get("USE_VIEWPORT", "").lower() == "true"
-            if int(width) < 450 and not use_viewport:
-                return web.json_response(
-                    make_response(False, error="width < 450 requires USE_VIEWPORT=true")
-                )
-            result = system.set_resolution(int(width), int(height))
-            if use_viewport:
-                await page.set_viewport_size({"width": int(width), "height": int(height)})
-            return web.json_response(make_response(True, result))
-
-        if action == "reset_resolution":
-            result = system.reset_resolution()
-            if os.environ.get("USE_VIEWPORT", "").lower() == "true":
-                await page.set_viewport_size({"width": result["width"], "height": result["height"]})
-            return web.json_response(make_response(True, result))
 
         if action == "get_resolution":
             result = system.get_resolution()
@@ -274,9 +263,13 @@ async def handle_command(request: web.Request) -> web.Response:
 
         if action == "get_html":
             html = await page.content()
-            return web.json_response(make_response(True, {"html": html, "length": len(html)}))
+            return web.json_response(
+                make_response(True, {"html": html, "length": len(html)})
+            )
 
-        return web.json_response(make_response(False, error=f"Unknown action: {action}"))
+        return web.json_response(
+            make_response(False, error=f"Unknown action: {action}")
+        )
 
     except Exception as e:
         return web.json_response(make_response(False, error=str(e)))

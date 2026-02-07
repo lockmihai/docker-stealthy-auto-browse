@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import random
-import subprocess
 import time
 
 
@@ -23,11 +22,6 @@ class System:
     def __init__(self) -> None:
         self._pyautogui = None
         self._window_offset = {"x": 0, "y": 0}
-        w, h = _get_default_resolution()
-        self._original_res_width: int = w
-        self._original_res_height: int = h
-        self._current_res_width: int = w
-        self._current_res_height: int = h
 
     @property
     def is_ready(self) -> bool:
@@ -134,67 +128,7 @@ class System:
                 self._pyautogui.typewrite(char)
             time.sleep(max(0.02, interval + random.uniform(-0.03, 0.05)))
 
-    def set_resolution(self, width: int, height: int) -> dict:
-        """Set Xvfb display resolution using xrandr and resize browser window."""
-        mode_name = f"{width}x{height}"
-
-        # Check if mode already exists
-        result = subprocess.run(
-            ["xrandr", "--query"],
-            capture_output=True,
-            text=True,
-        )
-
-        if mode_name not in result.stdout:
-            # Generate modeline with cvt
-            # Output format: Modeline "WxH_60.00"  pclk h1 h2 h3 h4 v1 v2 v3 v4 flags
-            cvt_result = subprocess.run(
-                ["cvt", str(width), str(height)],
-                capture_output=True,
-                text=True,
-            )
-            for line in cvt_result.stdout.split("\n"):
-                if "Modeline" not in line:
-                    continue
-                # Parse: Modeline "name" params...
-                parts = line.split('"')
-                if len(parts) < 3:
-                    continue
-                cvt_mode_name = parts[1]  # e.g., "375x667_60.00"
-                modeline_params = parts[2].strip()  # everything after closing quote
-                subprocess.run(["xrandr", "--newmode", cvt_mode_name, *modeline_params.split()])
-                subprocess.run(["xrandr", "--addmode", "screen", cvt_mode_name])
-                mode_name = cvt_mode_name
-                break
-
-        # Set the display resolution
-        subprocess.run(["xrandr", "-s", mode_name])
-
-        # Resize browser window to match
-        result = subprocess.run(
-            ["xdotool", "search", "--onlyvisible", "--name", ""],
-            capture_output=True,
-            text=True,
-        )
-        for wid in result.stdout.strip().split("\n"):
-            if not wid:
-                continue
-            subprocess.run(["xdotool", "windowmove", wid, "0", "0"])
-            subprocess.run(["xdotool", "windowsize", wid, str(width), str(height)])
-
-        self._current_res_width = width
-        self._current_res_height = height
-        return {"width": width, "height": height}
-
-    def reset_resolution(self) -> dict:
-        """Reset Xvfb display resolution to original."""
-        return self.set_resolution(self._original_res_width, self._original_res_height)
-
     def get_resolution(self) -> dict:
-        """Get current and original resolution."""
-        return {
-            "width": self._current_res_width,
-            "height": self._current_res_height,
-            "original_width": self._original_res_width,
-            "original_height": self._original_res_height,
-        }
+        """Get resolution from XVFB_RESOLUTION env var."""
+        w, h = _get_default_resolution()
+        return {"width": w, "height": h}

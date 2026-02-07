@@ -137,16 +137,6 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "calibrate"}'
 
-# Set display resolution
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "set_resolution", "width": 1280, "height": 720}'
-
-# Reset display resolution to original
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "reset_resolution"}'
-
 # Get current resolution info
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
@@ -171,9 +161,7 @@ curl -X POST http://localhost:8080 \
 | `system_click` | `x`, `y`, `duration` | PyAutoGUI move + click |
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
 | `calibrate` | - | Get window offset for coordinate mapping |
-| `set_resolution` | `width`, `height` | Change display resolution (width < 450 requires `USE_VIEWPORT=true`) |
-| `reset_resolution` | - | Reset display to original resolution |
-| `get_resolution` | - | Get current and original display resolution |
+| `get_resolution` | - | Get current display resolution |
 | `enter_fullscreen` | - | Enter browser fullscreen mode (hides browser chrome) |
 | `exit_fullscreen` | - | Exit browser fullscreen mode |
 | `system_type` | `text`, `interval` | PyAutoGUI typing with variable delays |
@@ -189,11 +177,11 @@ curl -X POST http://localhost:8080 \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution (WxH, max 1920x1080) |
+| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution (WxH) |
 | `XVFB_DEPTH` | `24` | Color depth (16, 24, or 32) |
 | `TZ` | `UTC` | Timezone (e.g., `Europe/Bucharest`, `America/New_York`). Set to match your IP location. |
 | `LANG` | `en_US.UTF-8` | Locale for browser language |
-| `USE_VIEWPORT` | `false` | Enable Playwright viewport control. Required for resolutions < 450px width (mobile). **Warning:** May reduce stealth - only use for targets that don't need maximum stealth. |
+| `USE_VIEWPORT` | `false` | Enable Playwright viewport control. Required for narrow widths (Firefox has a ~450px minimum without it). **Warning:** May reduce stealth. |
 
 **Important:** Set `TZ` to match your IP's geographic location to avoid detection. Example:
 
