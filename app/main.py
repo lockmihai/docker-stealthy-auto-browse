@@ -79,12 +79,17 @@ def get_active_page():
 
 
 async def get_window_offset_js(page) -> dict:
-    """Get browser window position using JavaScript."""
+    """Get browser content area offset from screen origin.
+
+    Uses Firefox's mozInnerScreenX/Y which report the real screen position
+    of the viewport. These are NOT spoofed by Camoufox (unlike outerHeight/
+    innerHeight which are fingerprint-spoofed and give wrong offsets).
+    """
     try:
         return await page.evaluate(
             """() => ({
-                x: window.screenX + window.outerWidth - window.innerWidth,
-                y: window.screenY + window.outerHeight - window.innerHeight
+                x: Math.round(window.mozInnerScreenX),
+                y: Math.round(window.mozInnerScreenY)
             })"""
         )
     except Exception:

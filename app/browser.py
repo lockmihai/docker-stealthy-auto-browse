@@ -49,6 +49,22 @@ def _save_config(config: dict[str, Any]) -> None:
         json.dump(config, f, indent=2)
 
 
+def _update_config_screen(config: dict[str, Any], width: int, height: int) -> None:
+    """Update screen/window dims in config to match current resolution."""
+    config["screen.width"] = width
+    config["screen.height"] = height
+    config["screen.availWidth"] = width
+    config["screen.availHeight"] = height
+    config["window.outerWidth"] = width
+    config["window.outerHeight"] = height
+    config["window.innerWidth"] = width
+    config["window.innerHeight"] = height - 80  # Account for browser chrome
+    config["window.screenX"] = 0
+    config["window.screenY"] = 0
+    config["screen.availLeft"] = 0
+    config["screen.availTop"] = 0
+
+
 def _generate_camoufox_config(screen_width: int, screen_height: int) -> dict[str, Any]:
     """Generate a Camoufox config with realistic Linux Firefox fingerprint."""
     from browserforge.fingerprints import FingerprintGenerator
@@ -294,7 +310,10 @@ class Browser:
         config = _load_persisted_config()
         if config is None:
             config = _generate_camoufox_config(width, height)
-            _save_config(config)
+        else:
+            # Update screen dimensions to match current XVFB_RESOLUTION
+            _update_config_screen(config, width, height)
+        _save_config(config)
 
         # Use system locale or default to en-US
         locale = os.environ.get("LANG", "en_US.UTF-8").split(".")[0].replace("_", "-")

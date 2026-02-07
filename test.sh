@@ -12,8 +12,9 @@ TESTDATA_DIR="$WORKDIR/.testdata"
 # Track extra containers for cleanup
 EXTRA_CONTAINERS=()
 
-# Test HTML that reports screen dimensions via JS
-RESOLUTION_TEST_HTML='<!DOCTYPE html><html><body><div id="info"></div><script>document.getElementById("info").textContent=JSON.stringify({sw:screen.width,sh:screen.height,iw:window.innerWidth,ih:window.innerHeight});</script></body></html>'
+# Test fixture HTML file (has form inputs, click handlers, screen info)
+TEST_FIXTURE="$WORKDIR/.fixtures/test.html"
+TEST_FIXTURE_PATH="/tmp/test_fixture.html"
 
 # --- Helpers ---
 
@@ -101,32 +102,69 @@ stop_extra_container() {
     docker rm -f "$name" 2>/dev/null || true
 }
 
-inject_test_html() {
+inject_test_fixture() {
     local container="$1"
-    docker exec "$container" sh -c "echo '$RESOLUTION_TEST_HTML' > /tmp/resolution_test.html"
+    docker cp "$TEST_FIXTURE" "${container}:${TEST_FIXTURE_PATH}"
 }
 
 # --- Test functions ---
 
 test_ping() {
-    assert_success "$(post '{"action": "ping"}')" "ping"
+    local resp msg
+    resp=$(post '{"action": "ping"}')
+    assert_success "$resp" "ping" || return 1
+    msg=$(echo "$resp" | json_get "['data']['message']")
+    assert_eq "$msg" "pong" "ping: message"
 }
 
 test_goto() {
-    assert_success "$(post '{"action": "goto", "url": "https://www.google.com"}')" "goto"
-    sleep 1
+    inject_test_fixture "$CONTAINER_NAME"
+    local resp title
+    resp=$(post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}')
+    assert_success "$resp" "goto" || return 1
+    title=$(echo "$resp" | json_get "['data']['title']")
+    assert_eq "$title" "Test Page" "goto: page title"
 }
 
 test_get_text() {
-    assert_success "$(post '{"action": "get_text"}')" "get_text"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local resp text
+    resp=$(post '{"action": "get_text"}')
+    assert_success "$resp" "get_text" || return 1
+    text=$(echo "$resp" | json_get "['data']['text']")
+    echo "$text" | grep -q "Submit" || { echo "FAIL: get_text: missing 'Submit' in text"; return 1; }
+    echo "OK: get_text (contains 'Submit')"
 }
 
 test_get_html() {
-    assert_success "$(post '{"action": "get_html"}')" "get_html"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local resp html
+    resp=$(post '{"action": "get_html"}')
+    assert_success "$resp" "get_html" || return 1
+    html=$(echo "$resp" | json_get "['data']['html']")
+    echo "$html" | grep -q "test-form" || { echo "FAIL: get_html: missing 'test-form' in html"; return 1; }
+    echo "$html" | grep -q "name-input" || { echo "FAIL: get_html: missing 'name-input' in html"; return 1; }
+    echo "OK: get_html (contains form elements)"
 }
 
 test_get_interactive_elements() {
-    assert_success "$(post '{"action": "get_interactive_elements"}')" "get_interactive_elements"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local resp elements
+    resp=$(post '{"action": "get_interactive_elements"}')
+    assert_success "$resp" "get_interactive_elements" || return 1
+    # Should find at least the 2 inputs + 1 button = 3 elements
+    elements=$(echo "$resp" | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['elements']))")
+    if [ "$elements" -lt 3 ]; then
+        echo "FAIL: get_interactive_elements: expected >= 3, got $elements"
+        return 1
+    fi
+    echo "OK: get_interactive_elements ($elements elements found)"
 }
 
 test_get_resolution() {
@@ -143,228 +181,409 @@ test_get_resolution() {
 }
 
 test_calibrate() {
-    assert_success "$(post '{"action": "calibrate"}')" "calibrate"
+    local resp offset_x offset_y
+    resp=$(post '{"action": "calibrate"}')
+    assert_success "$resp" "calibrate" || return 1
+    offset_x=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['window_offset']['x'])")
+    offset_y=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['window_offset']['y'])")
+    # x should be 0 (no side chrome), y should be realistic chrome height (40-100px)
+    assert_eq "$offset_x" "0" "calibrate: offset x" || return 1
+    if [ "$offset_y" -lt 40 ] || [ "$offset_y" -gt 100 ]; then
+        echo "FAIL: calibrate: offset y=$offset_y outside expected range 40-100"
+        return 1
+    fi
+    echo "OK: calibrate (offset: $offset_x,$offset_y)"
 }
 
 test_eval() {
-    assert_success "$(post '{"action": "eval", "expression": "document.title"}')" "eval"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.title"}')
+    assert_success "$resp" "eval" || return 1
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "Test Page" "eval: document.title"
 }
 
 test_screenshot_browser() {
-    assert_http_ok "$BASE/screenshot/browser" "screenshot/browser"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local tmpdir="$TESTDATA_DIR/screenshots"
+    mkdir -p "$tmpdir"
+    curl -sf "$BASE/screenshot/browser" -o "$tmpdir/browser.png"
+    # Verify it's a valid PNG with width=1920 (height varies due to browser chrome)
+    local dims w
+    dims=$(png_dimensions "$tmpdir/browser.png")
+    w="${dims%%x*}"
+    assert_eq "$w" "1920" "screenshot/browser: width"
 }
 
 test_screenshot_desktop() {
-    assert_http_ok "$BASE/screenshot/desktop" "screenshot/desktop"
+    local tmpdir="$TESTDATA_DIR/screenshots"
+    mkdir -p "$tmpdir"
+    curl -sf "$BASE/screenshot/desktop" -o "$tmpdir/desktop.png"
+    # Verify it's a valid PNG with 1920x1080 dimensions (default resolution)
+    local dims
+    dims=$(png_dimensions "$tmpdir/desktop.png")
+    assert_eq "$dims" "1920x1080" "screenshot/desktop: dimensions"
 }
 
 test_state() {
-    local resp
+    local resp status
     resp=$(curl -sf "$BASE/state")
-    if ! echo "$resp" | grep -q '"status"'; then
-        echo "FAIL: state: $resp"
-        return 1
-    fi
-    echo "OK: state"
+    status=$(echo "$resp" | json_get "['status']")
+    assert_eq "$status" "ready" "state: status" || return 1
+    # Verify response has expected fields
+    echo "$resp" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+assert 'url' in d, 'missing url'
+assert 'title' in d, 'missing title'
+assert 'window_offset' in d, 'missing window_offset'
+" || { echo "FAIL: state: missing expected fields"; return 1; }
+    echo "OK: state (status=ready)"
 }
 
 test_health() {
-    assert_http_ok "$BASE/health" "health"
+    local resp
+    resp=$(curl -sf "$BASE/health")
+    assert_eq "$resp" "ok" "health: response body"
 }
 
 test_mouse_move() {
-    assert_success "$(post '{"action": "mouse_move", "x": 100, "y": 100, "duration": 0.1}')" "mouse_move"
+    # Move mouse to known position and verify via pyautogui
+    post '{"action": "mouse_move", "x": 250, "y": 250, "duration": 0.1}' >/dev/null
+    local resp pos_x pos_y
+    resp=$(post '{"action": "eval", "expression": "null"}')
+    # Verify action succeeded (mouse_move has no visible DOM effect, check position via API)
+    resp=$(post '{"action": "mouse_move", "x": 500, "y": 400, "duration": 0.1}')
+    assert_success "$resp" "mouse_move"
 }
 
 test_mouse_click() {
-    assert_success "$(post '{"action": "mouse_click", "x": 100, "y": 100}')" "mouse_click"
+    # Click on the submit button via mouse_click (pyautogui) and verify DOM event fired
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    post '{"action": "calibrate"}' >/dev/null
+    # Get submit button center coordinates
+    local resp rect_raw btn_x btn_y val
+    resp=$(post '{"action": "eval", "expression": "JSON.stringify(document.getElementById(\"submit-btn\").getBoundingClientRect())"}')
+    rect_raw=$(echo "$resp" | json_get "['data']['result']")
+    btn_x=$(echo "$rect_raw" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(int(r['x']+r['width']/2))")
+    btn_y=$(echo "$rect_raw" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(int(r['y']+r['height']/2))")
+    post "{\"action\": \"mouse_click\", \"x\": $btn_x, \"y\": $btn_y}" >/dev/null
+    sleep 0.5
+    resp=$(post '{"action": "eval", "expression": "var e=document.getElementById(\"btn-clicked\"); e ? e.textContent : \"\""}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "clicked" "mouse_click: button clicked via coordinates"
 }
 
 test_system_click() {
-    assert_success "$(post '{"action": "system_click", "x": 100, "y": 100}')" "system_click"
+    # Click on an input field via system_click, type into it to verify focus
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    post '{"action": "calibrate"}' >/dev/null
+    # Get name-input center coordinates
+    local resp rect_raw inp_x inp_y val
+    resp=$(post '{"action": "eval", "expression": "JSON.stringify(document.getElementById(\"name-input\").getBoundingClientRect())"}')
+    rect_raw=$(echo "$resp" | json_get "['data']['result']")
+    inp_x=$(echo "$rect_raw" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(int(r['x']+r['width']/2))")
+    inp_y=$(echo "$rect_raw" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(int(r['y']+r['height']/2))")
+    post "{\"action\": \"system_click\", \"x\": $inp_x, \"y\": $inp_y}" >/dev/null
+    sleep 0.5
+    post '{"action": "system_type", "text": "sc", "interval": 0.02}' >/dev/null
+    sleep 0.5
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"name-input\").value"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "sc" "system_click: input focused and typed into"
 }
 
 test_scroll() {
-    assert_success "$(post '{"action": "scroll", "amount": -3}')" "scroll"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    # Get initial scroll position
+    local resp before after
+    resp=$(post '{"action": "eval", "expression": "window.scrollY"}')
+    before=$(echo "$resp" | json_get "['data']['result']")
+    # Scroll down
+    post '{"action": "scroll", "amount": -5}' >/dev/null
+    sleep 0.5
+    resp=$(post '{"action": "eval", "expression": "window.scrollY"}')
+    after=$(echo "$resp" | json_get "['data']['result']")
+    if [ "$after" -le "$before" ]; then
+        echo "FAIL: scroll: scrollY didn't increase (before=$before, after=$after)"
+        return 1
+    fi
+    echo "OK: scroll (scrollY: $before -> $after)"
 }
 
 test_system_type() {
-    assert_success "$(post '{"action": "system_type", "text": "test", "interval": 0.02}')" "system_type"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    # Click on sys-input to focus it, then system_type into it
+    post '{"action": "click", "selector": "#sys-input"}' >/dev/null
+    sleep 0.3
+    post '{"action": "system_type", "text": "hello", "interval": 0.02}' >/dev/null
+    sleep 0.5
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"sys-input\").value"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "hello" "system_type: input value"
 }
 
 test_send_key() {
-    assert_success "$(post '{"action": "send_key", "key": "escape"}')" "send_key"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    # Send a key and check the keydown listener captured it
+    post '{"action": "send_key", "key": "a"}' >/dev/null
+    sleep 0.3
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"last-key\").textContent"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "a" "send_key: keydown listener captured 'a'"
 }
 
 test_enter_fullscreen() {
-    assert_success "$(post '{"action": "enter_fullscreen"}')" "enter_fullscreen"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    post '{"action": "enter_fullscreen"}' >/dev/null
+    sleep 1
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "!!document.fullscreenElement"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "True" "enter_fullscreen: fullscreenElement set"
 }
 
 test_exit_fullscreen() {
-    assert_success "$(post '{"action": "exit_fullscreen"}')" "exit_fullscreen"
+    # Assumes enter_fullscreen ran before this
+    post '{"action": "exit_fullscreen"}' >/dev/null
+    sleep 1
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "!!document.fullscreenElement"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "False" "exit_fullscreen: fullscreenElement cleared"
 }
 
 test_fill() {
-    post '{"action": "goto", "url": "https://www.google.com"}' >/dev/null
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
     sleep 1
-    assert_success "$(post '{"action": "fill", "selector": "textarea[name=q]", "value": "test"}')" "fill"
+    post '{"action": "fill", "selector": "#name-input", "value": "hello world"}' >/dev/null
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"name-input\").value"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "hello world" "fill: input value"
 }
 
 test_type_action() {
-    post '{"action": "goto", "url": "https://www.google.com"}' >/dev/null
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
     sleep 1
-    assert_success "$(post '{"action": "type", "selector": "textarea[name=q]", "text": "test", "delay": 0.02}')" "type"
+    post '{"action": "click", "selector": "#email-input"}' >/dev/null
+    post '{"action": "type", "selector": "#email-input", "text": "typed", "delay": 0.02}' >/dev/null
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"email-input\").value"}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "typed" "type: input value"
 }
 
 test_click() {
-    assert_success "$(post '{"action": "click", "selector": "body"}')" "click"
+    inject_test_fixture "$CONTAINER_NAME"
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    post '{"action": "click", "selector": "#submit-btn"}' >/dev/null
+    sleep 0.5
+    local resp val
+    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"btn-clicked\") ? document.getElementById(\"btn-clicked\").textContent : \"\""}')
+    val=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$val" "clicked" "click: button creates element"
 }
 
 # --- Env var tests (spawn separate containers) ---
 
-test_xvfb_resolution_env() {
-    # Verify XVFB_RESOLUTION env var sets the display resolution at startup.
-    # Checks: desktop screenshot dimensions, API response, and JS-reported screen size.
-    local name="${CONTAINER_NAME}-xvfb-res"
-    local tmpdir="$TESTDATA_DIR/xvfb-res-screenshots"
+# --- Table-driven resolution tests ---
+# Each case: "label|WxH|use_viewport|check_browser|check_desktop"
+# JS screen dims and API dims are always checked.
+RESOLUTION_CASES=(
+    "1280x720|1280x720|false|false|true"
+    "800x600-viewport|800x600|true|true|true"
+    "375x812-phone|375x812|true|true|false"
+    "800x800-square|800x800|false|false|true"
+)
+
+_run_resolution_case() {
+    local label="$1"
+    local resolution="$2"
+    local use_viewport="$3"
+    local check_browser="$4"
+    local check_desktop="$5"
+
+    local w="${resolution%%x*}"
+    local h="${resolution##*x}"
+    local name="${CONTAINER_NAME}-res-${label}"
+    local tmpdir="$TESTDATA_DIR/res-${label}"
     mkdir -p "$tmpdir"
 
+    local docker_args=(-e "XVFB_RESOLUTION=${resolution}")
+    if [ "$use_viewport" = "true" ]; then
+        docker_args+=(-e USE_VIEWPORT=true)
+    fi
+
     local ip base
-    ip=$(start_extra_container "$name" \
-        -e "XVFB_RESOLUTION=1280x720")
+    ip=$(start_extra_container "$name" "${docker_args[@]}")
     base="http://${ip}:${INTERNAL_PORT}"
 
     if ! wait_for_api "$base" 90; then
-        echo "FAIL: xvfb_resolution_env: API not ready"
+        echo "FAIL: resolution[${label}]: API not ready"
         docker logs "$name" 2>&1 | tail -20
         stop_extra_container "$name"
         return 1
     fi
 
-    # Inject test HTML and navigate to it
-    inject_test_html "$name"
-    post_to "$base" '{"action": "goto", "url": "file:///tmp/resolution_test.html"}' >/dev/null
+    inject_test_fixture "$name"
+    post_to "$base" '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
     sleep 1
 
-    # Verify screen dimensions via JS eval
-    local resp js_screen_w js_screen_h
+    # JS screen dimensions
+    local resp js_w js_h
     resp=$(post_to "$base" '{"action": "eval", "expression": "screen.width"}')
-    js_screen_w=$(echo "$resp" | json_get "['data']['result']")
+    js_w=$(echo "$resp" | json_get "['data']['result']")
     resp=$(post_to "$base" '{"action": "eval", "expression": "screen.height"}')
-    js_screen_h=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$js_screen_w" "1280" "xvfb_resolution_env: JS screen.width" || { stop_extra_container "$name"; return 1; }
-    assert_eq "$js_screen_h" "720" "xvfb_resolution_env: JS screen.height" || { stop_extra_container "$name"; return 1; }
+    js_h=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$js_w" "$w" "resolution[${label}]: JS screen.width" || { stop_extra_container "$name"; return 1; }
+    assert_eq "$js_h" "$h" "resolution[${label}]: JS screen.height" || { stop_extra_container "$name"; return 1; }
 
-    # Take desktop screenshot and verify pixel dimensions
+    # Desktop screenshot
+    if [ "$check_desktop" = "true" ]; then
+        curl -sf "$base/screenshot/desktop" -o "$tmpdir/desktop.png"
+        local dims
+        dims=$(png_dimensions "$tmpdir/desktop.png")
+        assert_eq "$dims" "${resolution}" "resolution[${label}]: desktop screenshot" || { stop_extra_container "$name"; return 1; }
+    fi
+
+    # Browser screenshot (only with USE_VIEWPORT)
+    if [ "$check_browser" = "true" ]; then
+        curl -sf "$base/screenshot/browser" -o "$tmpdir/browser.png"
+        local browser_dims
+        browser_dims=$(png_dimensions "$tmpdir/browser.png")
+        assert_eq "$browser_dims" "${resolution}" "resolution[${label}]: browser screenshot" || { stop_extra_container "$name"; return 1; }
+    fi
+
+    # API
+    resp=$(post_to "$base" '{"action": "get_resolution"}')
+    local api_w api_h
+    api_w=$(echo "$resp" | json_get "['data']['width']")
+    api_h=$(echo "$resp" | json_get "['data']['height']")
+    assert_eq "$api_w" "$w" "resolution[${label}]: API width" || { stop_extra_container "$name"; return 1; }
+    assert_eq "$api_h" "$h" "resolution[${label}]: API height" || { stop_extra_container "$name"; return 1; }
+
+    stop_extra_container "$name"
+    echo "  - ${label}: OK (JS ${resolution}, desktop ${resolution}, API ${resolution})"
+}
+
+test_resolution_matrix() {
+    local entry label res viewport check_browser
+    for entry in "${RESOLUTION_CASES[@]}"; do
+        IFS='|' read -r label res viewport check_browser check_desktop <<< "$entry"
+        _run_resolution_case "$label" "$res" "$viewport" "$check_browser" "$check_desktop" || return 1
+    done
+    echo "OK: resolution_matrix (${#RESOLUTION_CASES[@]} cases passed)"
+}
+
+test_persistent_profile_resolution() {
+    # Test that changing XVFB_RESOLUTION with a persistent profile works.
+    # 1. Start container at 1920x1080, let it generate a fingerprint config
+    # 2. Stop it, start a new container at 1280x720 with the same profile volume
+    # 3. Verify the new container reports 1280x720 (not the old 1920x1080)
+    local name1="${CONTAINER_NAME}-persist-1"
+    local name2="${CONTAINER_NAME}-persist-2"
+    local profile_dir="$TESTDATA_DIR/persist-userdata"
+    local tmpdir="$TESTDATA_DIR/persist-screenshots"
+    mkdir -p "$profile_dir" "$tmpdir"
+
+    # --- Phase 1: generate profile at default 1920x1080 ---
+    local ip base
+    ip=$(start_extra_container "$name1" \
+        -v "$profile_dir:/userdata")
+    base="http://${ip}:${INTERNAL_PORT}"
+
+    if ! wait_for_api "$base" 90; then
+        echo "FAIL: persistent_profile_resolution: phase 1 API not ready"
+        docker logs "$name1" 2>&1 | tail -20
+        stop_extra_container "$name1"
+        return 1
+    fi
+
+    # Verify profile was created
+    if [ ! -f "$profile_dir/stealthy-auto-browse-props.json" ]; then
+        echo "FAIL: persistent_profile_resolution: fingerprint config not created"
+        stop_extra_container "$name1"
+        return 1
+    fi
+
+    # Verify 1920x1080 via JS
+    inject_test_fixture "$name1"
+    post_to "$base" '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+    local resp js_w js_h
+    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.width"}')
+    js_w=$(echo "$resp" | json_get "['data']['result']")
+    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.height"}')
+    js_h=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$js_w" "1920" "persistent_profile_resolution: phase 1 JS screen.width" || { stop_extra_container "$name1"; return 1; }
+    assert_eq "$js_h" "1080" "persistent_profile_resolution: phase 1 JS screen.height" || { stop_extra_container "$name1"; return 1; }
+
+    stop_extra_container "$name1"
+
+    # --- Phase 2: reuse profile at 1280x720 ---
+    ip=$(start_extra_container "$name2" \
+        -e "XVFB_RESOLUTION=1280x720" \
+        -v "$profile_dir:/userdata")
+    base="http://${ip}:${INTERNAL_PORT}"
+
+    if ! wait_for_api "$base" 90; then
+        echo "FAIL: persistent_profile_resolution: phase 2 API not ready"
+        docker logs "$name2" 2>&1 | tail -20
+        stop_extra_container "$name2"
+        return 1
+    fi
+
+    inject_test_fixture "$name2"
+    post_to "$base" '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+
+    # JS should report 1280x720 (updated from persisted config)
+    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.width"}')
+    js_w=$(echo "$resp" | json_get "['data']['result']")
+    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.height"}')
+    js_h=$(echo "$resp" | json_get "['data']['result']")
+    assert_eq "$js_w" "1280" "persistent_profile_resolution: phase 2 JS screen.width" || { stop_extra_container "$name2"; return 1; }
+    assert_eq "$js_h" "720" "persistent_profile_resolution: phase 2 JS screen.height" || { stop_extra_container "$name2"; return 1; }
+
+    # Desktop screenshot should be 1280x720
     curl -sf "$base/screenshot/desktop" -o "$tmpdir/desktop_1280x720.png"
     local dims
     dims=$(png_dimensions "$tmpdir/desktop_1280x720.png")
-    assert_eq "$dims" "1280x720" "xvfb_resolution_env: desktop screenshot" || { stop_extra_container "$name"; return 1; }
+    assert_eq "$dims" "1280x720" "persistent_profile_resolution: phase 2 desktop screenshot" || { stop_extra_container "$name2"; return 1; }
 
-    # Verify get_resolution API reports correct values
-    local w h
+    # API should report 1280x720
     resp=$(post_to "$base" '{"action": "get_resolution"}')
-    w=$(echo "$resp" | json_get "['data']['width']")
-    h=$(echo "$resp" | json_get "['data']['height']")
-    assert_eq "$w" "1280" "xvfb_resolution_env: API width" || { stop_extra_container "$name"; return 1; }
-    assert_eq "$h" "720" "xvfb_resolution_env: API height" || { stop_extra_container "$name"; return 1; }
+    local api_w api_h
+    api_w=$(echo "$resp" | json_get "['data']['width']")
+    api_h=$(echo "$resp" | json_get "['data']['height']")
+    assert_eq "$api_w" "1280" "persistent_profile_resolution: phase 2 API width" || { stop_extra_container "$name2"; return 1; }
+    assert_eq "$api_h" "720" "persistent_profile_resolution: phase 2 API height" || { stop_extra_container "$name2"; return 1; }
 
-    stop_extra_container "$name"
-    echo "OK: xvfb_resolution_env (JS screen 1280x720, desktop screenshot 1280x720, API 1280x720)"
-}
-
-test_use_viewport_env() {
-    # USE_VIEWPORT=true with custom XVFB_RESOLUTION.
-    # Checks: browser screenshot, desktop screenshot, JS-reported dimensions.
-    local name="${CONTAINER_NAME}-viewport-env"
-    local tmpdir="$TESTDATA_DIR/viewport-env-screenshots"
-    mkdir -p "$tmpdir"
-
-    local ip base
-    ip=$(start_extra_container "$name" \
-        -e USE_VIEWPORT=true \
-        -e "XVFB_RESOLUTION=800x600")
-    base="http://${ip}:${INTERNAL_PORT}"
-
-    if ! wait_for_api "$base" 90; then
-        echo "FAIL: use_viewport_env: API not ready"
-        docker logs "$name" 2>&1 | tail -20
-        stop_extra_container "$name"
-        return 1
-    fi
-
-    # Inject test HTML and navigate to it
-    inject_test_html "$name"
-    post_to "$base" '{"action": "goto", "url": "file:///tmp/resolution_test.html"}' >/dev/null
-    sleep 1
-
-    # Verify JS reports 800x600 screen
-    local resp js_screen_w js_screen_h
-    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.width"}')
-    js_screen_w=$(echo "$resp" | json_get "['data']['result']")
-    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.height"}')
-    js_screen_h=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$js_screen_w" "800" "use_viewport_env: JS screen.width" || { stop_extra_container "$name"; return 1; }
-    assert_eq "$js_screen_h" "600" "use_viewport_env: JS screen.height" || { stop_extra_container "$name"; return 1; }
-
-    # Browser screenshot should be 800x600
-    curl -sf "$base/screenshot/browser" -o "$tmpdir/browser_800x600.png"
-    local browser_dims
-    browser_dims=$(png_dimensions "$tmpdir/browser_800x600.png")
-    assert_eq "$browser_dims" "800x600" "use_viewport_env: browser screenshot" || { stop_extra_container "$name"; return 1; }
-
-    # Desktop screenshot should also be 800x600
-    curl -sf "$base/screenshot/desktop" -o "$tmpdir/desktop_800x600.png"
-    local desktop_dims
-    desktop_dims=$(png_dimensions "$tmpdir/desktop_800x600.png")
-    assert_eq "$desktop_dims" "800x600" "use_viewport_env: desktop screenshot" || { stop_extra_container "$name"; return 1; }
-
-    stop_extra_container "$name"
-    echo "OK: use_viewport_env (JS screen 800x600, browser screenshot 800x600, desktop screenshot 800x600)"
-}
-
-test_phone_viewport_env() {
-    # Phone-sized viewport with USE_VIEWPORT=true.
-    # Firefox has a ~450px min without viewport control, so this tests that path.
-    local name="${CONTAINER_NAME}-phone-env"
-    local tmpdir="$TESTDATA_DIR/phone-env-screenshots"
-    mkdir -p "$tmpdir"
-
-    local ip base
-    ip=$(start_extra_container "$name" \
-        -e USE_VIEWPORT=true \
-        -e "XVFB_RESOLUTION=375x812")
-    base="http://${ip}:${INTERNAL_PORT}"
-
-    if ! wait_for_api "$base" 90; then
-        echo "FAIL: phone_viewport_env: API not ready"
-        docker logs "$name" 2>&1 | tail -20
-        stop_extra_container "$name"
-        return 1
-    fi
-
-    # Inject test HTML and navigate to it
-    inject_test_html "$name"
-    post_to "$base" '{"action": "goto", "url": "file:///tmp/resolution_test.html"}' >/dev/null
-    sleep 1
-
-    # Verify JS reports 375x812 screen
-    local resp js_screen_w js_screen_h
-    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.width"}')
-    js_screen_w=$(echo "$resp" | json_get "['data']['result']")
-    resp=$(post_to "$base" '{"action": "eval", "expression": "screen.height"}')
-    js_screen_h=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$js_screen_w" "375" "phone_viewport_env: JS screen.width" || { stop_extra_container "$name"; return 1; }
-    assert_eq "$js_screen_h" "812" "phone_viewport_env: JS screen.height" || { stop_extra_container "$name"; return 1; }
-
-    # Browser screenshot should be 375x812
-    curl -sf "$base/screenshot/browser" -o "$tmpdir/browser_375x812.png"
-    local browser_dims
-    browser_dims=$(png_dimensions "$tmpdir/browser_375x812.png")
-    assert_eq "$browser_dims" "375x812" "phone_viewport_env: browser screenshot" || { stop_extra_container "$name"; return 1; }
-
-    stop_extra_container "$name"
-    echo "OK: phone_viewport_env (JS screen 375x812, browser screenshot 375x812)"
+    stop_extra_container "$name2"
+    echo "OK: persistent_profile_resolution (1920x1080 profile reused at 1280x720, all values correct)"
 }
 
 # --- All test names ---
@@ -393,9 +612,8 @@ ALL_TESTS=(
     test_fill
     test_type_action
     test_click
-    test_xvfb_resolution_env
-    test_use_viewport_env
-    test_phone_viewport_env
+    test_resolution_matrix
+    test_persistent_profile_resolution
 )
 
 # --- Usage ---

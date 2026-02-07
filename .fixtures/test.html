@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Page</title></head>
+<body>
+  <!-- Screen info for resolution tests -->
+  <div id="screen-info"></div>
+  <script>
+    document.getElementById("screen-info").textContent = JSON.stringify({
+      sw: screen.width,
+      sh: screen.height,
+      iw: window.innerWidth,
+      ih: window.innerHeight
+    });
+  </script>
+
+  <!-- Form for fill/type/system_type tests -->
+  <form id="test-form">
+    <input id="name-input" type="text" name="name" placeholder="Name">
+    <input id="email-input" type="text" name="email" placeholder="Email">
+    <input id="sys-input" type="text" name="sys" placeholder="System typing">
+    <button id="submit-btn" type="button">Submit</button>
+  </form>
+
+  <!-- Click result area -->
+  <div id="click-result"></div>
+
+  <!-- Large click target for coordinate-based click tests (tolerant of offset errors) -->
+  <div id="click-target" style="width: 400px; height: 300px; margin: 50px auto; background: #eee; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+    Click here
+  </div>
+  <div id="click-target-result"></div>
+
+  <!-- Keyboard event tracking -->
+  <div id="last-key"></div>
+
+  <!-- Tall spacer for scroll tests -->
+  <div id="spacer" style="height: 5000px; background: linear-gradient(white, gray);"></div>
+  <div id="bottom-marker">bottom</div>
+
+  <script>
+    document.getElementById("submit-btn").addEventListener("click", function() {
+      var el = document.createElement("div");
+      el.id = "btn-clicked";
+      el.textContent = "clicked";
+      document.getElementById("click-result").appendChild(el);
+    });
+
+    document.getElementById("click-target").addEventListener("click", function() {
+      document.getElementById("click-target-result").textContent = "target-clicked";
+    });
+
+    document.addEventListener("keydown", function(e) {
+      document.getElementById("last-key").textContent = e.key;
+    });
+  </script>
+</body>
+</html>
