@@ -7,6 +7,7 @@ Stealth browser automation in a container. Camoufox + Xvfb + PyAutoGUI running n
 - [Why?](#why)
 - [What's Inside](#whats-inside)
 - [Quick Start](#quick-start)
+- [OpenClaw / ClawHub Skill](#openclaw--clawhub-skill)
 - [Claude Code Integration](#claude-code-integration)
 - [HTTP API](#http-api)
 - [Actions Reference](#actions-reference)
@@ -52,6 +53,34 @@ Open a URL on startup:
 docker run -d psyb0t/stealthy-auto-browse https://example.com
 ```
 
+## OpenClaw / ClawHub Skill
+
+This project is available as an [OpenClaw](https://docs.openclaw.ai/) skill on [ClawHub](https://clawhub.ai/psyb0t/stealthy-auto-browse). Install it and any OpenClaw-compatible agent can use the browser on demand.
+
+**Install:**
+
+```bash
+clawhub install psyb0t/stealthy-auto-browse
+```
+
+**Configure** (`~/.openclaw/openclaw.json`):
+
+```json
+{
+  "skills": {
+    "entries": {
+      "stealthy-auto-browse": {
+        "env": {
+          "STEALTHY_AUTO_BROWSE_URL": "http://localhost:8080"
+        }
+      }
+    }
+  }
+}
+```
+
+The skill loads on demand when browser automation is needed — it won't consume tokens until the agent actually needs to browse. Start the container with `docker run -d -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse` and the agent handles the rest.
+
 ## Claude Code Integration
 
 This container works great with [Claude Code](https://claude.ai/code). Claude can launch the browser, navigate pages, read content, click elements, and fill forms - all through the HTTP API.
@@ -69,8 +98,8 @@ The container exposes an HTTP API on port 8080.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | POST | Execute browser commands |
-| `/screenshot/browser` | GET | Get browser viewport screenshot as PNG |
-| `/screenshot/desktop` | GET | Get full desktop screenshot as PNG |
+| `/screenshot/browser` | GET | Get browser viewport screenshot as PNG (supports resize query params) |
+| `/screenshot/desktop` | GET | Get full desktop screenshot as PNG (supports resize query params) |
 | `/state` | GET | Get browser state as JSON |
 | `/health` | GET | Health check |
 
@@ -172,6 +201,31 @@ curl -X POST http://localhost:8080 \
 | `get_interactive_elements` | `visible_only` (bool) | Get clickable elements |
 | `get_text` | - | Get page text content |
 | `get_html` | - | Get page HTML |
+
+### Screenshot Resize
+
+Both screenshot endpoints accept optional query parameters for resizing:
+
+| Parameter | Description |
+|-----------|-------------|
+| `width` | Resize to this width, keep aspect ratio |
+| `height` | Resize to this height, keep aspect ratio |
+| `width` + `height` | Resize to exact dimensions (ignores aspect ratio) |
+| `whLargest` | Set the largest side (width or height) to this value, keep aspect ratio |
+
+```bash
+# Resize to 512px on longest side (aspect ratio preserved)
+curl http://localhost:8080/screenshot/browser?whLargest=512 -o screenshot.png
+
+# Resize to 800px wide (aspect ratio preserved)
+curl http://localhost:8080/screenshot/browser?width=800 -o screenshot.png
+
+# Resize to exact 400x400 (stretches)
+curl http://localhost:8080/screenshot/browser?width=400&height=400 -o screenshot.png
+
+# Desktop screenshot resized to 300px tall
+curl http://localhost:8080/screenshot/desktop?height=300 -o screenshot.png
+```
 
 ## Environment Variables
 

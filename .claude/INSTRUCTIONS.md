@@ -22,10 +22,11 @@ docker stop stealthy-browser
 
 1. **Set TZ to match IP location** - If the timezone doesn't match where the IP says you are, bot detectors may flag it. The user should set `-e TZ=Europe/Bucharest` or whatever matches their IP.
 
-2. **Resize screenshots before viewing** - Always max 512px on largest side, keep aspect ratio:
+2. **Resize screenshots before viewing** - Use the `whLargest` query param to cap the largest side at 512px (keeps aspect ratio):
    ```bash
-   curl -s "http://localhost:8080/screenshot/browser" | convert - -resize '512x512>' /tmp/screen.png
+   curl -s "http://localhost:8080/screenshot/browser?whLargest=512" -o /tmp/screen.png
    ```
+   Other resize options: `?width=800`, `?height=300`, `?width=400&height=400` (exact).
 
 3. **Prefer system input for keyboard** - `system_type` and `send_key` generate real OS-level keystrokes that are undetectable. Playwright's `type` and `fill` work but are detectable if the site looks hard enough.
 
@@ -33,7 +34,7 @@ docker stop stealthy-browser
    ```bash
    # /tmp/browser.sh
    API="${BROWSER_API:-http://localhost:8080}"
-   browser_screenshot() { curl -s "$API/screenshot/browser" | convert - -resize '512x512>' "${1:-/tmp/screen.png}"; }
+   browser_screenshot() { curl -s "$API/screenshot/browser?whLargest=512" -o "${1:-/tmp/screen.png}"; }
    browser_goto() { curl -s -X POST "$API" -H "Content-Type: application/json" -d "{\"action\":\"goto\",\"url\":\"$1\"}"; }
    browser_click() { curl -s -X POST "$API" -H "Content-Type: application/json" -d "{\"action\":\"system_click\",\"x\":$1,\"y\":$2}"; }
    browser_type() { curl -s -X POST "$API" -H "Content-Type: application/json" -d "{\"action\":\"system_type\",\"text\":\"$1\"}"; }
@@ -53,7 +54,7 @@ curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
 
 **Take screenshot (always resize):**
 ```bash
-curl -s "http://localhost:8080/screenshot/browser" | convert - -resize '512x512>' /tmp/screen.png
+curl -s "http://localhost:8080/screenshot/browser?whLargest=512" -o /tmp/screen.png
 ```
 
 **Find clickable elements:**

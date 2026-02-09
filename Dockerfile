@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install camoufox, pyautogui, and aiohttp
-RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp
+RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp Pillow
 
 # Download Camoufox browser
 RUN python -m camoufox fetch

@@ -16,6 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import subprocess
 import sys
@@ -23,7 +24,9 @@ import tempfile
 import time
 from datetime import datetime
 
+from PIL import Image
 from aiohttp import web
+
 from browser import Browser, BrowserConfig
 from system import System
 
@@ -280,7 +283,44 @@ async def handle_command(request: web.Request) -> web.Response:
         return web.json_response(make_response(False, error=str(e)))
 
 
-async def handle_screenshot_browser(_request: web.Request) -> web.Response:
+def _resize_png(data: bytes, request: web.Request) -> bytes:
+    """Resize PNG bytes based on query params: width, height, whLargest."""
+    q = request.query
+    w_str = q.get("width")
+    h_str = q.get("height")
+    largest_str = q.get("whLargest")
+
+    if not w_str and not h_str and not largest_str:
+        return data
+
+    img = Image.open(io.BytesIO(data))
+    orig_w, orig_h = img.size
+
+    if largest_str:
+        largest = int(largest_str)
+        if orig_w >= orig_h:
+            new_w = largest
+            new_h = int(orig_h * largest / orig_w)
+        else:
+            new_h = largest
+            new_w = int(orig_w * largest / orig_h)
+    elif w_str and h_str:
+        new_w = int(w_str)
+        new_h = int(h_str)
+    elif w_str:
+        new_w = int(w_str)
+        new_h = int(orig_h * new_w / orig_w)
+    else:
+        new_h = int(h_str)  # type: ignore[arg-type]
+        new_w = int(orig_w * new_h / orig_h)
+
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def handle_screenshot_browser(request: web.Request) -> web.Response:
     """GET /screenshot/browser - Return browser viewport PNG screenshot."""
     page = get_active_page()
     if not page:
@@ -288,12 +328,13 @@ async def handle_screenshot_browser(_request: web.Request) -> web.Response:
 
     try:
         data = await page.screenshot(type="png")
+        data = _resize_png(data, request)
         return web.Response(body=data, content_type="image/png")
     except Exception as e:
         return web.Response(status=500, text=str(e))
 
 
-async def handle_screenshot_desktop(_request: web.Request) -> web.Response:
+async def handle_screenshot_desktop(request: web.Request) -> web.Response:
     """GET /screenshot/desktop - Return full desktop PNG screenshot using scrot."""
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
@@ -311,6 +352,7 @@ async def handle_screenshot_desktop(_request: web.Request) -> web.Response:
             data = f.read()
 
         os.unlink(tmp_path)
+        data = _resize_png(data, request)
         return web.Response(body=data, content_type="image/png")
     except Exception as e:
         return web.Response(status=500, text=str(e))

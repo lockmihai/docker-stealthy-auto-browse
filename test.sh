@@ -107,6 +107,20 @@ inject_test_fixture() {
     docker cp "$TEST_FIXTURE" "${container}:${TEST_FIXTURE_PATH}"
 }
 
+# --- Per-test setup/teardown (main container only) ---
+
+test_setup() {
+    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
+    sleep 1
+}
+
+test_teardown() {
+    # Reset scroll position
+    post '{"action": "eval", "expression": "window.scrollTo(0,0)"}' >/dev/null 2>&1 || true
+    # Exit fullscreen if active
+    post '{"action": "exit_fullscreen"}' >/dev/null 2>&1 || true
+}
+
 # --- Test functions ---
 
 test_ping() {
@@ -118,7 +132,6 @@ test_ping() {
 }
 
 test_goto() {
-    inject_test_fixture "$CONTAINER_NAME"
     local resp title
     resp=$(post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}')
     assert_success "$resp" "goto" || return 1
@@ -127,9 +140,6 @@ test_goto() {
 }
 
 test_get_text() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     local resp text
     resp=$(post '{"action": "get_text"}')
     assert_success "$resp" "get_text" || return 1
@@ -139,9 +149,6 @@ test_get_text() {
 }
 
 test_get_html() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     local resp html
     resp=$(post '{"action": "get_html"}')
     assert_success "$resp" "get_html" || return 1
@@ -152,9 +159,6 @@ test_get_html() {
 }
 
 test_get_interactive_elements() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     local resp elements
     resp=$(post '{"action": "get_interactive_elements"}')
     assert_success "$resp" "get_interactive_elements" || return 1
@@ -196,9 +200,6 @@ test_calibrate() {
 }
 
 test_eval() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     local resp val
     resp=$(post '{"action": "eval", "expression": "document.title"}')
     assert_success "$resp" "eval" || return 1
@@ -207,9 +208,6 @@ test_eval() {
 }
 
 test_screenshot_browser() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     local tmpdir="$TESTDATA_DIR/screenshots"
     mkdir -p "$tmpdir"
     curl -sf "$BASE/screenshot/browser" -o "$tmpdir/browser.png"
@@ -228,6 +226,49 @@ test_screenshot_desktop() {
     local dims
     dims=$(png_dimensions "$tmpdir/desktop.png")
     assert_eq "$dims" "1920x1080" "screenshot/desktop: dimensions"
+}
+
+test_screenshot_resize() {
+    local tmpdir="$TESTDATA_DIR/screenshots"
+    mkdir -p "$tmpdir"
+
+    # Get original browser screenshot dimensions for ratio calculations
+    curl -sf "$BASE/screenshot/browser" -o "$tmpdir/orig.png"
+    local orig_dims orig_w orig_h
+    orig_dims=$(png_dimensions "$tmpdir/orig.png")
+    orig_w="${orig_dims%%x*}"
+    orig_h="${orig_dims##*x}"
+
+    # Cases: "label|query_params|expected_width|expected_height"
+    local cases=(
+        "width_only|width=800|800|$(( orig_h * 800 / orig_w ))"
+        "height_only|height=300|$(( orig_w * 300 / orig_h ))|300"
+        "width_and_height|width=400&height=400|400|400"
+        "whLargest|whLargest=512|512|$(( orig_h * 512 / orig_w ))"
+    )
+
+    local entry label params exp_w exp_h
+    for entry in "${cases[@]}"; do
+        IFS='|' read -r label params exp_w exp_h <<< "$entry"
+        curl -sf "$BASE/screenshot/browser?${params}" -o "$tmpdir/resize_${label}.png"
+        local dims w h
+        dims=$(png_dimensions "$tmpdir/resize_${label}.png")
+        w="${dims%%x*}"
+        h="${dims##*x}"
+        assert_eq "$w" "$exp_w" "screenshot_resize[$label]: width" || return 1
+        assert_eq "$h" "$exp_h" "screenshot_resize[$label]: height" || return 1
+    done
+
+    # Also verify desktop resize works
+    curl -sf "$BASE/screenshot/desktop?whLargest=256" -o "$tmpdir/resize_desktop.png"
+    local desk_dims desk_w desk_h
+    desk_dims=$(png_dimensions "$tmpdir/resize_desktop.png")
+    desk_w="${desk_dims%%x*}"
+    desk_h="${desk_dims##*x}"
+    # Default is 1920x1080, width is largest so should be 256
+    assert_eq "$desk_w" "256" "screenshot_resize[desktop_whLargest]: width" || return 1
+
+    echo "OK: screenshot_resize (${#cases[@]} browser cases + desktop)"
 }
 
 test_state() {
@@ -264,9 +305,6 @@ test_mouse_move() {
 
 test_mouse_click() {
     # Click on the submit button via mouse_click (pyautogui) and verify DOM event fired
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "calibrate"}' >/dev/null
     # Get submit button center coordinates
     local resp rect_raw btn_x btn_y val
@@ -283,9 +321,6 @@ test_mouse_click() {
 
 test_system_click() {
     # Click on an input field via system_click, type into it to verify focus
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "calibrate"}' >/dev/null
     # Get name-input center coordinates
     local resp rect_raw inp_x inp_y val
@@ -303,9 +338,6 @@ test_system_click() {
 }
 
 test_scroll() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     # Get initial scroll position
     local resp before after
     resp=$(post '{"action": "eval", "expression": "window.scrollY"}')
@@ -323,9 +355,6 @@ test_scroll() {
 }
 
 test_system_type() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     # Click on sys-input to focus it, then system_type into it
     post '{"action": "click", "selector": "#sys-input"}' >/dev/null
     sleep 0.3
@@ -338,9 +367,6 @@ test_system_type() {
 }
 
 test_send_key() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     # Send a key and check the keydown listener captured it
     post '{"action": "send_key", "key": "a"}' >/dev/null
     sleep 0.3
@@ -351,9 +377,6 @@ test_send_key() {
 }
 
 test_enter_fullscreen() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "enter_fullscreen"}' >/dev/null
     sleep 1
     local resp val
@@ -363,7 +386,9 @@ test_enter_fullscreen() {
 }
 
 test_exit_fullscreen() {
-    # Assumes enter_fullscreen ran before this
+    # Enter fullscreen first so this test is self-contained
+    post '{"action": "enter_fullscreen"}' >/dev/null
+    sleep 1
     post '{"action": "exit_fullscreen"}' >/dev/null
     sleep 1
     local resp val
@@ -373,9 +398,6 @@ test_exit_fullscreen() {
 }
 
 test_fill() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "fill", "selector": "#name-input", "value": "hello world"}' >/dev/null
     local resp val
     resp=$(post '{"action": "eval", "expression": "document.getElementById(\"name-input\").value"}')
@@ -384,9 +406,6 @@ test_fill() {
 }
 
 test_type_action() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "click", "selector": "#email-input"}' >/dev/null
     post '{"action": "type", "selector": "#email-input", "text": "typed", "delay": 0.02}' >/dev/null
     local resp val
@@ -396,9 +415,6 @@ test_type_action() {
 }
 
 test_click() {
-    inject_test_fixture "$CONTAINER_NAME"
-    post '{"action": "goto", "url": "file:///tmp/test_fixture.html"}' >/dev/null
-    sleep 1
     post '{"action": "click", "selector": "#submit-btn"}' >/dev/null
     sleep 0.5
     local resp val
@@ -606,6 +622,7 @@ ALL_TESTS=(
     test_eval
     test_screenshot_browser
     test_screenshot_desktop
+    test_screenshot_resize
     test_mouse_move
     test_mouse_click
     test_system_click
@@ -672,6 +689,9 @@ setup() {
         exit 1
     fi
     echo "API ready"
+
+    # Copy test fixture once (all main-container tests reuse it)
+    inject_test_fixture "$CONTAINER_NAME"
 }
 
 cleanup() {
@@ -717,11 +737,13 @@ FAILED=0
 PASSED=0
 
 for t in "${TESTS_TO_RUN[@]}"; do
+    test_setup
     if $t; then
         PASSED=$((PASSED + 1))
-        continue
+    else
+        FAILED=$((FAILED + 1))
     fi
-    FAILED=$((FAILED + 1))
+    test_teardown
 done
 
 echo ""
