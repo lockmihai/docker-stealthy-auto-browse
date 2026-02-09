@@ -33,6 +33,19 @@
   <!-- Keyboard event tracking -->
   <div id="last-key"></div>
 
+  <!-- Loader marker (loaders write here to prove they ran) -->
+  <div id="loader-marker"></div>
+
+  <!-- Download link for download tests -->
+  <a id="download-link" href="/download.txt" download="download.txt" style="display:block;margin:10px;">Download test file</a>
+
+  <!-- File upload form for upload tests -->
+  <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+    <input id="file-input" type="file" name="file">
+    <button id="upload-btn" type="submit">Upload</button>
+  </form>
+  <div id="upload-result"></div>
+
   <!-- Tall spacer for scroll tests -->
   <div id="spacer" style="height: 5000px; background: linear-gradient(white, gray);"></div>
   <div id="bottom-marker">bottom</div>

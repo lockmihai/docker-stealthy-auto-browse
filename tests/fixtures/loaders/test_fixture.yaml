@@ -1,0 +1,13 @@
+name: Test Fixture Loader
+match:
+  regex: "index\\.html"
+steps:
+  - action: goto
+    url: "${url}"
+    wait_until: domcontentloaded
+  - action: eval
+    expression: |
+      (() => {
+        const el = document.getElementById("loader-marker");
+        if (el) el.textContent = "loader-executed";
+      })()

@@ -64,7 +64,7 @@ Or via OpenClaw config (`~/.openclaw/openclaw.json`):
 **Two input modes:**
 
 1. **System methods** (`system_click`, `system_type`, `mouse_move`, `send_key`) — OS-level input via PyAutoGUI, completely undetectable. Use these for stealth.
-2. **Playwright methods** (`click`, `fill`, `type`) — CSS selector-based, faster but detectable by behavioral analysis.
+2. **Playwright methods** (`click`, `fill`, `type`) — CSS/XPath selector-based, faster but detectable by behavioral analysis.
 
 **Workflow for undetectable browsing:**
 
@@ -130,10 +130,11 @@ All commands: POST `$STEALTHY_AUTO_BROWSE_URL/` with JSON `{"action": "<name>", 
 
 ### Playwright Input (Detectable)
 
-**click** — Click by CSS selector
+**click** — Click by CSS selector or XPath
 
 ```json
 {"action": "click", "selector": "#submit-btn"}
+{"action": "click", "selector": "xpath=//button[@id='submit-btn']"}
 ```
 
 **fill** — Fill input field (clears first)
@@ -146,6 +147,140 @@ All commands: POST `$STEALTHY_AUTO_BROWSE_URL/` with JSON `{"action": "<name>", 
 
 ```json
 {"action": "type", "selector": "#search", "text": "query", "delay": 0.05}
+```
+
+### Tab Management
+
+**list_tabs** — Get all open tabs
+
+```json
+{"action": "list_tabs"}
+```
+
+**new_tab** — Open new tab (optionally navigate)
+
+```json
+{"action": "new_tab", "url": "https://example.com"}
+```
+
+**switch_tab** — Switch to tab by index
+
+```json
+{"action": "switch_tab", "index": 0}
+```
+
+**close_tab** — Close current tab
+
+```json
+{"action": "close_tab"}
+```
+
+### Dialog Handling
+
+**handle_dialog** — Pre-configure next dialog response (must call BEFORE triggering the dialog)
+
+```json
+{"action": "handle_dialog", "accept": true}
+{"action": "handle_dialog", "accept": true, "text": "prompt response"}
+{"action": "handle_dialog", "accept": false}
+```
+
+**get_last_dialog** — Get info about the last dialog
+
+```json
+{"action": "get_last_dialog"}
+```
+
+Returns `type` (alert/confirm/prompt), `message`, `default_value`, `buttons`.
+
+### Cookie & Storage Management
+
+**get_cookies** — Get all cookies
+
+```json
+{"action": "get_cookies"}
+```
+
+**set_cookie** — Set a cookie
+
+```json
+{"action": "set_cookie", "name": "key", "value": "val", "url": "https://example.com"}
+```
+
+**delete_cookies** — Clear all cookies
+
+```json
+{"action": "delete_cookies"}
+```
+
+**get_storage** / **set_storage** / **clear_storage** — localStorage/sessionStorage
+
+```json
+{"action": "get_storage", "type": "local"}
+{"action": "set_storage", "type": "local", "key": "k", "value": "v"}
+{"action": "clear_storage", "type": "session"}
+```
+
+### Downloads & Uploads
+
+**get_last_download** — Get info about last downloaded file
+
+```json
+{"action": "get_last_download"}
+```
+
+**upload_file** — Set file on a file input element
+
+```json
+{"action": "upload_file", "selector": "#file-input", "file_path": "/tmp/file.txt"}
+```
+
+### Network Logging
+
+**enable_network_log** / **disable_network_log** — Toggle request/response logging
+
+```json
+{"action": "enable_network_log"}
+{"action": "disable_network_log"}
+```
+
+**get_network_log** — Get captured requests/responses
+
+```json
+{"action": "get_network_log"}
+```
+
+**clear_network_log** — Clear the log
+
+```json
+{"action": "clear_network_log"}
+```
+
+### Wait Conditions
+
+**wait_for_element** — Wait for element to appear (CSS or XPath)
+
+```json
+{"action": "wait_for_element", "selector": "#loaded", "timeout": 10}
+{"action": "wait_for_element", "selector": "xpath=//div[@class='done']", "timeout": 10}
+```
+
+**wait_for_text** — Wait for text to appear on page
+
+```json
+{"action": "wait_for_text", "text": "Success", "timeout": 10}
+```
+
+**wait_for_url** — Wait for URL to match pattern
+
+```json
+{"action": "wait_for_url", "url": "**/dashboard", "timeout": 10}
+```
+
+**wait_for_network_idle** — Wait for no network activity
+
+```json
+{"action": "wait_for_network_idle", "timeout": 30}
 ```
 
 ### Page Inspection
@@ -239,6 +374,9 @@ docker run -d -p 8080:8080 -e XVFB_RESOLUTION=1280x720 psyb0t/stealthy-auto-brow
 # Match timezone to IP location (important for stealth)
 docker run -d -p 8080:8080 -e TZ=Europe/Bucharest psyb0t/stealthy-auto-browse
 
+# HTTP proxy
+docker run -d -p 8080:8080 -e PROXY_URL=http://user:pass@proxy:8888 psyb0t/stealthy-auto-browse
+
 # Persistent browser profile (cookies, sessions, fingerprint)
 docker run -d -p 8080:8080 -v ./profile:/userdata psyb0t/stealthy-auto-browse
 
@@ -299,3 +437,5 @@ curl "$API/screenshot/browser?whLargest=512" -o result.png
 5. **Match `TZ`** to your IP's geographic location
 6. **Use `whLargest=512`** on screenshots to keep them manageable
 7. **Mount `/userdata`** for persistent cookies, sessions, and fingerprint across restarts
+8. **Use `wait_for_element`** instead of `sleep` when waiting for page content
+9. **Use `handle_dialog`** before triggering alerts/confirms/prompts

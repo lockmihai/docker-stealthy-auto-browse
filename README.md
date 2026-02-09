@@ -12,6 +12,8 @@ Stealth browser automation in a container. Camoufox + Xvfb + PyAutoGUI running n
 - [HTTP API](#http-api)
 - [Actions Reference](#actions-reference)
 - [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Page Loaders](#page-loaders)
 - [Persistent Profiles](#persistent-profiles)
 - [Browser Extensions](#browser-extensions)
 - [VNC Access](#vnc-access)
@@ -171,6 +173,81 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "get_resolution"}'
 
+# Open a new tab
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "new_tab", "url": "https://example.com"}'
+
+# List all open tabs
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "list_tabs"}'
+
+# Switch to tab by index
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "switch_tab", "index": 0}'
+
+# Close a tab by index
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "close_tab", "index": 1}'
+
+# Get all cookies
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_cookies"}'
+
+# Set a cookie
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "set_cookie", "name": "session", "value": "abc123", "url": "https://example.com"}'
+
+# Delete all cookies
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "delete_cookies"}'
+
+# Pre-configure dialog handling (accept/dismiss next dialog)
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "handle_dialog", "accept": true, "text": "my prompt response"}'
+
+# Get info about the last dialog
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_last_dialog"}'
+
+# Upload a file to a file input
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "upload_file", "selector": "input[type=file]", "file_path": "/tmp/document.pdf"}'
+
+# Wait for an element to appear
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "wait_for_element", "selector": "#results", "state": "visible", "timeout": 10}'
+
+# Wait for specific text to appear on page
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "wait_for_text", "text": "Success", "timeout": 15}'
+
+# Wait for URL to match a pattern
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "wait_for_url", "url": "**/dashboard", "timeout": 10}'
+
+# Enable network request/response logging
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "enable_network_log"}'
+
+# Get captured network log
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_network_log"}'
+
 # Close browser
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
@@ -179,28 +256,123 @@ curl -X POST http://localhost:8080 \
 
 ## Actions Reference
 
+### Navigation
+
 | Action | Parameters | Description |
 |--------|------------|-------------|
-| `ping` | - | Health check, returns current URL |
-| `close` | - | Close browser and shutdown |
 | `goto` | `url`, `wait_until` | Navigate to URL |
-| `click` | `selector` | Playwright click (DOM event) |
-| `mouse_move` | `x`, `y`, `duration` | Human-like mouse movement |
-| `mouse_click` | `x`, `y` (optional) | PyAutoGUI click (OS-level) |
-| `system_click` | `x`, `y`, `duration` | PyAutoGUI move + click |
+| `back` | - | Go back in browser history |
+| `forward` | - | Go forward in browser history |
+| `refresh` | - | Reload current page |
+
+### Playwright Input (DOM Events)
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `click` | `selector` | Playwright click on a CSS selector (DOM event) |
+| `fill` | `selector`, `value` | Fill input field (clears existing value first) |
+| `type` | `selector`, `text`, `delay` | Type into element character by character |
+
+### System Input (OS-Level via PyAutoGUI)
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `mouse_move` | `x`, `y`, `duration` | Human-like mouse movement to coordinates |
+| `mouse_click` | `x`, `y` (optional) | PyAutoGUI click at position or current location |
+| `system_click` | `x`, `y`, `duration` | PyAutoGUI move + click (combined) |
 | `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
+| `scroll_to_bottom` | `delay` | Fast JS scroll to bottom, triggers lazy loading |
+| `scroll_to_bottom_humanized` | `min_clicks`, `max_clicks`, `delay` | OS-level humanized scroll to bottom |
+| `system_type` | `text`, `interval` | PyAutoGUI typing with variable delays |
+| `send_key` | `key` | Send keyboard key via PyAutoGUI (e.g., `enter`, `backspace`, `ctrl+a`) |
+
+### Tab Management
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `list_tabs` | - | List all open tabs with URLs and active status |
+| `new_tab` | `url`, `wait_until` | Open a new tab, optionally navigate to URL |
+| `switch_tab` | `index` | Switch to tab by index |
+| `close_tab` | `index` (optional) | Close tab by index, or close active tab |
+
+### Dialog Handling
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `handle_dialog` | `accept` (bool), `text` | Pre-configure how to handle the next browser dialog (alert/confirm/prompt) |
+| `get_last_dialog` | - | Get info about the last dialog that appeared (type, message, buttons) |
+
+### Cookie Management
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `get_cookies` | `urls` (optional list) | Get all cookies, optionally filtered by URLs |
+| `set_cookie` | `name`, `value`, `url`, ... | Set a cookie (accepts all Playwright cookie fields) |
+| `delete_cookies` | - | Delete all cookies |
+
+### Storage
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `get_storage` | `type` (`local`/`session`) | Get all localStorage or sessionStorage items |
+| `set_storage` | `type`, `key`, `value` | Set a storage item |
+| `clear_storage` | `type` (`local`/`session`) | Clear localStorage or sessionStorage |
+
+### Downloads
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `get_last_download` | - | Get info about the last downloaded file (url, filename, path) |
+
+### Network Logging
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `enable_network_log` | - | Start capturing network requests and responses |
+| `disable_network_log` | - | Stop capturing network traffic |
+| `get_network_log` | - | Get captured network log entries |
+| `clear_network_log` | - | Clear all captured network log entries |
+
+### Wait Conditions
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `wait_for_element` | `selector`, `state`, `timeout` | Wait for element to reach state (`visible`, `hidden`, `attached`, `detached`) |
+| `wait_for_text` | `text`, `timeout` | Wait for text to appear on the page |
+| `wait_for_url` | `url`, `timeout` | Wait for URL to match a pattern (supports globs like `**/dashboard`) |
+| `wait_for_network_idle` | `timeout` | Wait for network activity to settle |
+
+### File Upload
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `upload_file` | `selector`, `file_path` | Upload a file to a file input element |
+
+### Page Inspection
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `get_interactive_elements` | `visible_only` (bool) | Get clickable/interactive elements on the page |
+| `get_text` | - | Get page text content (up to 10,000 chars) |
+| `get_html` | - | Get full page HTML |
+| `eval` | `expression` | Execute JavaScript and return the result |
+
+### Display & Calibration
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
 | `calibrate` | - | Get window offset for coordinate mapping |
 | `get_resolution` | - | Get current display resolution |
 | `enter_fullscreen` | - | Enter browser fullscreen mode (hides browser chrome) |
 | `exit_fullscreen` | - | Exit browser fullscreen mode |
-| `system_type` | `text`, `interval` | PyAutoGUI typing with variable delays |
-| `send_key` | `key` | Send keyboard key via pyautogui (e.g., `enter`, `backspace`, `ctrl+a`) |
-| `fill` | `selector`, `value` | Fill input field |
-| `type` | `selector`, `text`, `delay` | Type into element |
-| `eval` | `expression` | Execute JavaScript |
-| `get_interactive_elements` | `visible_only` (bool) | Get clickable elements |
-| `get_text` | - | Get page text content |
-| `get_html` | - | Get page HTML |
+
+### Utility
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `ping` | - | Health check, returns current URL |
+| `close` | - | Close browser and shutdown |
+| `sleep` | `duration` | Wait for N seconds |
 
 ### Screenshot Resize
 
@@ -236,6 +408,8 @@ curl http://localhost:8080/screenshot/desktop?height=300 -o screenshot.png
 | `TZ` | `UTC` | Timezone (e.g., `Europe/Bucharest`, `America/New_York`). Set to match your IP location. |
 | `LANG` | `en_US.UTF-8` | Locale for browser language |
 | `USE_VIEWPORT` | `false` | Enable Playwright viewport control. Required for narrow widths (Firefox has a ~450px minimum without it). **Warning:** May reduce stealth. |
+| `LOADERS_DIR` | `/loaders` | Directory containing YAML page loaders |
+| `PROXY_URL` | - | HTTP proxy URL for all browser traffic (e.g., `http://user:pass@host:port`) |
 
 **Important:** Set `TZ` to match your IP's geographic location to avoid detection. Example:
 
@@ -252,6 +426,51 @@ docker run -d \
   -p 8080:8080 -p 5900:5900 \
   psyb0t/stealthy-auto-browse
 ```
+
+## Testing
+
+Tests are located in the `tests/` directory. Run the full test suite with:
+
+```bash
+./test.sh
+```
+
+Run specific tests by passing their names as arguments:
+
+```bash
+./test.sh test_proxy test_upload_file
+```
+
+## Page Loaders
+
+Mount a directory of YAML files to `/loaders` to define URL-triggered automation. When `goto` matches a loader, the loader's steps run instead of the default navigation. Each step is an API action — same format as POST body.
+
+```bash
+docker run -d -p 8080:8080 -p 5900:5900 \
+  -v ./loaders:/loaders \
+  psyb0t/stealthy-auto-browse
+```
+
+Example loader (`loaders/my_loader.yaml`):
+```yaml
+name: Clean Up Example.com
+match:
+  domain: example.com       # exact hostname (strips www.)
+  path_prefix: /page        # URL path starts with
+  # regex: "example\\.com/page/\\d+"  # or use regex
+steps:
+  - action: goto
+    url: "${url}"            # ${url} = the original URL
+    wait_until: networkidle
+  - action: sleep
+    duration: 1
+  - action: eval
+    expression: "document.querySelector('.popup')?.remove()"
+  - action: scroll_to_bottom
+    delay: 0.4
+```
+
+All match fields are optional (at least one required). All must match for the loader to trigger. See `loaders/` directory for real examples.
 
 ## Persistent Profiles
 
@@ -299,16 +518,16 @@ Tested against major bot detection services (January 2025):
 
 | Site | Result | Notes |
 |------|--------|-------|
-| [SannySoft](https://bot.sannysoft.com/) | ✅ Pass | All Intoli + fingerprint scanner tests pass |
-| [Incolumitas](https://bot.incolumitas.com/) | ✅ Pass | All new detection tests OK |
-| [Rebrowser Bot Detector](https://bot-detector.rebrowser.net/) | ✅ Pass | No CDP leaks, no webdriver, viewport OK |
-| [CreepJS](https://abrahamjuliot.github.io/creepjs/) | ✅ Pass | 0% stealth detected, chromium: false |
-| [BrowserScan](https://www.browserscan.net/bot-detection) | ✅ Pass | WebDriver, CDP, Navigator all "Normal" |
-| [Pixelscan](https://pixelscan.net/) | ✅ Pass | Bot check passed (set TZ to match IP for full pass) |
-| [BrowserLeaks WebRTC](https://browserleaks.com/webrtc) | ✅ Pass | No WebRTC IP leak |
-| [DeviceAndBrowserInfo](https://deviceandbrowserinfo.com/are_you_a_bot) | ✅ Pass | "You are human!" - all 19 checks green |
-| [IpHey](https://iphey.com/) | ✅ Pass | "Trustworthy" rating |
-| [Fingerprint.com](https://fingerprint.com/demo/) | ✅ Pass | Identified as normal Firefox, no bot flags |
+| [SannySoft](https://bot.sannysoft.com/) | Pass | All Intoli + fingerprint scanner tests pass |
+| [Incolumitas](https://bot.incolumitas.com/) | Pass | All new detection tests OK |
+| [Rebrowser Bot Detector](https://bot-detector.rebrowser.net/) | Pass | No CDP leaks, no webdriver, viewport OK |
+| [CreepJS](https://abrahamjuliot.github.io/creepjs/) | Pass | 0% stealth detected, chromium: false |
+| [BrowserScan](https://www.browserscan.net/bot-detection) | Pass | WebDriver, CDP, Navigator all "Normal" |
+| [Pixelscan](https://pixelscan.net/) | Pass | Bot check passed (set TZ to match IP for full pass) |
+| [BrowserLeaks WebRTC](https://browserleaks.com/webrtc) | Pass | No WebRTC IP leak |
+| [DeviceAndBrowserInfo](https://deviceandbrowserinfo.com/are_you_a_bot) | Pass | "You are human!" - all 19 checks green |
+| [IpHey](https://iphey.com/) | Pass | "Trustworthy" rating |
+| [Fingerprint.com](https://fingerprint.com/demo/) | Pass | Identified as normal Firefox, no bot flags |
 
 ### Why It Works
 

@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse as _urlparse
 
 # Path to JS files
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -358,6 +359,22 @@ class Browser:
             # Set timezone if explicitly configured
             if timezone_id and timezone_id != "UTC":
                 opts["timezone_id"] = timezone_id
+
+            # Proxy support
+            proxy_url = os.environ.get("PROXY_URL", "")
+            if proxy_url:
+                p = _urlparse(proxy_url)
+                proxy: dict[str, str] = {
+                    "server": f"{p.scheme}://{p.hostname}:{p.port}"
+                }
+                if p.username:
+                    proxy["username"] = p.username
+                if p.password:
+                    proxy["password"] = p.password
+                opts["proxy"] = proxy
+
+            # Accept file downloads
+            opts["accept_downloads"] = True
 
             self._context = await self._playwright.firefox.launch_persistent_context(
                 **opts

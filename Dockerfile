@@ -40,28 +40,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdotool scrot python3-tk python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install camoufox, pyautogui, and aiohttp
-RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp Pillow
+# Install Python packages (system-level, needs root)
+RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp Pillow pyyaml
 
-# Download Camoufox browser
+# Create non-root user and directories
+RUN groupadd -g 1000 browser && useradd -u 1000 -g 1000 -m browser
+RUN mkdir -p /app /userdata /loaders && chown -R browser:browser /app /userdata /loaders
+
+# Allow browser user to write GeoIP db into camoufox package dir
+RUN chown -R browser:browser /usr/local/lib/python3.12/site-packages/camoufox/
+
+# Switch to non-root user for camoufox fetch + extensions + runtime
+USER browser
+
+# Download Camoufox browser (writes to ~/.cache/camoufox + GeoIP db to site-packages)
 RUN python -m camoufox fetch
 
-# Copy scripts and install extensions
-COPY scripts/ /scripts/
+# Copy scripts and install extensions (writes to ~/.cache/camoufox)
+COPY --chown=browser:browser scripts/ /scripts/
 RUN python /scripts/install_extensions.py
 
-# Create directories for app and user data
-RUN mkdir -p /app /userdata
-
 # Copy app
-COPY app/ /app/
+COPY --chown=browser:browser app/ /app/
 
 # Set working directory
 WORKDIR /app
 
 # Copy entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY --chown=browser:browser --chmod=755 entrypoint.sh /entrypoint.sh
 
 # Environment variables
 ENV XVFB_RESOLUTION=1920x1080

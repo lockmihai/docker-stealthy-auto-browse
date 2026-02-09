@@ -3,7 +3,7 @@ IMAGE_NAME := psyb0t/stealthy-auto-browse
 TAG := latest
 TEST_TAG := $(TAG)-test
 
-.PHONY: build build-test clean help
+.PHONY: build build-test test clean help
 
 # Default target
 all: build
@@ -16,6 +16,10 @@ build:
 build-test:
 	docker build -t $(IMAGE_NAME):$(TEST_TAG) .
 
+# Run tests
+test:
+	./test.sh
+
 # Clean up images
 clean:
 	docker rmi $(IMAGE_NAME):$(TAG) || true
@@ -26,4 +30,5 @@ help:
 	@echo "Available targets:"
 	@echo "  build      - Build the main Docker image"
 	@echo "  build-test - Build the test Docker image with -test suffix"
+	@echo "  test       - Run test suite"
 	@echo "  clean      - Remove built images"

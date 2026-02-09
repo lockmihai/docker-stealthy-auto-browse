@@ -44,6 +44,10 @@ docker stop stealthy-browser
 
 5. **Mouse input is flexible** - Both Playwright `click` and PyAutoGUI `system_click` do smooth mouse movements. Use whichever fits - Playwright when you have a CSS selector, system_click when you have coordinates.
 
+6. **Use wait conditions instead of sleep** - Prefer `wait_for_element`, `wait_for_text`, `wait_for_url` over `sleep` for waiting on page content.
+
+7. **Handle dialogs proactively** - Call `handle_dialog` BEFORE triggering any action that opens an alert/confirm/prompt, or the page will hang.
+
 ## How to Interact
 
 **Navigate:**
@@ -70,10 +74,12 @@ curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
   -d '{"action": "system_click", "x": 500, "y": 300}'
 ```
 
-**Click by selector (Playwright):**
+**Click by selector (Playwright — CSS or XPath):**
 ```bash
 curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
   -d '{"action": "click", "selector": "button#submit"}'
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "click", "selector": "xpath=//button[@id=\"submit\"]"}'
 ```
 
 **Type text (undetectable):**
@@ -118,6 +124,40 @@ curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
   -d '{"action": "eval", "expression": "document.title"}'
 ```
 
+**Wait for element:**
+```bash
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "wait_for_element", "selector": "#results", "timeout": 10}'
+```
+
+**Manage tabs:**
+```bash
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "new_tab", "url": "https://example.com"}'
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "switch_tab", "index": 0}'
+```
+
+**Handle dialogs (call BEFORE triggering):**
+```bash
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "handle_dialog", "accept": true}'
+```
+
+**Upload file:**
+```bash
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "upload_file", "selector": "#file-input", "file_path": "/tmp/doc.pdf"}'
+```
+
+**Cookies:**
+```bash
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "get_cookies"}'
+curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
+  -d '{"action": "set_cookie", "name": "session", "value": "abc123", "url": "https://example.com"}'
+```
+
 ## Typical Workflow
 
 1. `goto` the URL
@@ -127,7 +167,29 @@ curl -s -X POST "http://localhost:8080" -H "Content-Type: application/json" \
 5. Once you understand the page, `get_interactive_elements` to find what to click and their coordinates
 6. `system_click` or `click` to interact
 7. `system_type` for text input, `send_key` for Enter/Tab/Escape
-8. `get_text` again to verify the result (screenshot only if needed)
+8. `wait_for_element` or `wait_for_text` to wait for results
+9. `get_text` again to verify the result (screenshot only if needed)
+
+## All Actions
+
+| Category | Actions |
+|----------|---------|
+| Navigation | `goto`, `back`, `forward`, `refresh` |
+| System Input | `system_click`, `mouse_move`, `mouse_click`, `system_type`, `send_key`, `scroll` |
+| Playwright Input | `click`, `fill`, `type` |
+| Tabs | `list_tabs`, `new_tab`, `switch_tab`, `close_tab` |
+| Dialogs | `handle_dialog`, `get_last_dialog` |
+| Cookies | `get_cookies`, `set_cookie`, `delete_cookies` |
+| Storage | `get_storage`, `set_storage`, `clear_storage` |
+| Downloads | `get_last_download` |
+| Uploads | `upload_file` |
+| Network | `enable_network_log`, `disable_network_log`, `get_network_log`, `clear_network_log` |
+| Waits | `wait_for_element`, `wait_for_text`, `wait_for_url`, `wait_for_network_idle` |
+| Inspection | `get_interactive_elements`, `get_text`, `get_html`, `eval` |
+| Scrolling | `scroll_to_bottom`, `scroll_to_bottom_humanized` |
+| Display | `calibrate`, `get_resolution`, `enter_fullscreen`, `exit_fullscreen` |
+| Utility | `ping`, `close`, `sleep` |
+| Screenshots | `GET /screenshot/browser`, `GET /screenshot/desktop` |
 
 ## What's Running
 

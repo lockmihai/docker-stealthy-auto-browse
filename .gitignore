@@ -5,3 +5,5 @@ app/profile
 CLAUDE.md
 screenshot.png
 .testdata
+loaders/*
+!loaders/example.yaml

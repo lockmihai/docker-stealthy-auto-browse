@@ -11,3 +11,6 @@ app/.mypy_cache
 LICENSE
 Makefile
 .testdata
+.fixtures
+tests
+test.sh
