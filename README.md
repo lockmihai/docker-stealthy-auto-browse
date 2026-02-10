@@ -222,8 +222,6 @@ All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
 | Action | Parameters | What It Does |
 |--------|------------|-------------|
 | `goto` | `url`, `wait_until` | Navigate to a URL. `wait_until` controls when the page is considered loaded: `"domcontentloaded"` (default, fast), `"load"` (all resources), `"networkidle"` (no network activity for 500ms). |
-| `back` | `wait_until` (optional) | Go back in browser history. Returns new URL and title. |
-| `forward` | `wait_until` (optional) | Go forward in browser history. Returns new URL and title. |
 | `refresh` | `wait_until` (optional) | Reload the current page. Returns URL and title. |
 
 ### System Input (OS-Level, Undetectable)
@@ -489,7 +487,7 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
 | `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution. The browser runs at this size. Can go smaller (e.g. `1280x720`, `1366x768`) but **not larger** than 1920x1080 — the virtual framebuffer maxes out at that size. |
 | `XVFB_DEPTH` | `24` | Color depth of the virtual display (16, 24, or 32 bit). 24 is fine for everything. |
 | `TZ` | `UTC` | **Timezone — this one matters for stealth.** Bot detectors compare your browser's timezone against your IP's geographic location. If your IP says you're in Romania but your timezone says UTC, that's a red flag. Set this to match your IP: `Europe/Bucharest`, `America/New_York`, `Asia/Tokyo`, etc. |
-| `LANG` | `en_US.UTF-8` | Browser locale/language. |
+| `LANG` | `en_US.UTF-8` | Browser locale/language. Not set in the Dockerfile — the code defaults to `en_US.UTF-8` internally. Override with `-e LANG=fr_FR.UTF-8` etc. to change the browser's locale. |
 | `USE_VIEWPORT` | `false` | Enables Playwright viewport control. Required if you need widths below ~450px (Firefox minimum without it). **Reduces stealth** because it adds Playwright viewport management. Only use for mobile layout testing on sites that don't have bot detection. |
 | `LOADERS_DIR` | `/loaders` | Directory the container scans for page loader YAML files. |
 | `PROXY_URL` | — | Routes all browser traffic through an HTTP proxy. Format: `http://user:pass@host:port`. Useful with residential proxies to match your IP to a specific location. |

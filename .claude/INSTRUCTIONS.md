@@ -103,7 +103,7 @@ Every response has this shape:
 - Returns: `{"url": "...", "title": "..."}`
 - If a page loader matches the URL, the loader runs instead and the response includes `"loader": "name"`.
 
-**back / forward / refresh** — Standard browser navigation. Optional `wait_until` (same as `goto`).
+**refresh** — Reloads the current page. Optional `wait_until` (same as `goto`).
 - Returns: `{"url": "...", "title": "..."}`
 
 ---

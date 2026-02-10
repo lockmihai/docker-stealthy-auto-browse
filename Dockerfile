@@ -70,7 +70,6 @@ WORKDIR /app
 COPY --chown=browser:browser --chmod=755 entrypoint.sh /entrypoint.sh
 
 # Environment variables
-ENV LANG=en_US.UTF-8
 ENV XVFB_RESOLUTION=1920x1080
 ENV XVFB_DEPTH=24
 

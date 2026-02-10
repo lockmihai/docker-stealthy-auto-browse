@@ -139,20 +139,19 @@ Navigates to a URL. This is how you load pages.
 
 **Note:** If a page loader matches the URL (see Page Loaders section), the loader's steps execute instead of the default navigation. The response will include `"loader": "loader name"` when this happens.
 
-#### back / forward / refresh
+#### refresh
 
-Standard browser navigation.
+Reloads the current page.
 
 ```json
-{"action": "back"}
-{"action": "forward"}
 {"action": "refresh"}
+{"action": "refresh", "wait_until": "networkidle"}
 ```
 
 **Parameters:**
 - `wait_until` (optional, default `"domcontentloaded"`): Same options as `goto`.
 
-**Response data:** `{"url": "https://example.com/previous-page", "title": "Previous Page"}`
+**Response data:** `{"url": "https://example.com/current-page", "title": "Current Page"}`
 
 ### System Input (Undetectable)
 
