@@ -1,40 +1,51 @@
 # docker-stealthy-auto-browse
 
-Stealth browser automation in a container. Camoufox + Xvfb + PyAutoGUI running non-headless with real mouse/keyboard input.
+Stealth browser automation that actually works. A Docker container running Camoufox (custom Firefox) with zero Chrome DevTools Protocol exposure, real OS-level mouse and keyboard input, and a dead-simple HTTP API to control it all.
+
+Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and every other bot detector we've thrown at it. While Chromium-based tools are getting caught by the first line of defense, this thing walks through the front door unnoticed.
 
 ## Table of Contents
 
-- [Why?](#why)
+- [Why This Exists](#why-this-exists)
 - [What's Inside](#whats-inside)
 - [Quick Start](#quick-start)
-- [OpenClaw / ClawHub Skill](#openclaw--clawhub-skill)
-- [Claude Code Integration](#claude-code-integration)
+- [How It Works](#how-it-works)
+- [Two Input Modes (This Is Important)](#two-input-modes-this-is-important)
 - [HTTP API](#http-api)
 - [Actions Reference](#actions-reference)
+- [Screenshots](#screenshots)
+- [Page Loaders (URL-Triggered Automation)](#page-loaders-url-triggered-automation)
 - [Environment Variables](#environment-variables)
-- [Testing](#testing)
-- [Page Loaders](#page-loaders)
 - [Persistent Profiles](#persistent-profiles)
 - [Browser Extensions](#browser-extensions)
 - [VNC Access](#vnc-access)
+- [OpenClaw / ClawHub Skill](#openclaw--clawhub-skill)
+- [Claude Code Integration](#claude-code-integration)
 - [Bot Detection Test Results](#bot-detection-test-results)
 - [License](#license)
 
-## Why?
+## Why This Exists
 
-Standard browser automation gets detected. Headless browsers leak signals. Chrome DevTools Protocol (CDP) can be detected. Bot detection services fingerprint everything.
+Every browser automation tool based on Chromium has the same fundamental problem: Chrome DevTools Protocol. CDP is how Playwright, Puppeteer, and Selenium talk to the browser, and it's also how bot detection services know you're automated. You can install stealth plugins, patch `navigator.webdriver`, and spoof fingerprints all day — CDP is still there, and services like Cloudflare, DataDome, PerimeterX, and Akamai will find it.
 
-This container runs **Camoufox Firefox** with **zero CDP exposure**. Unlike Chromium-based solutions, there's no `Runtime.enable` leak to detect. No fingerprint spoofing = no inconsistencies to detect. Combined with PyAutoGUI for real OS-level input events.
+This container takes a completely different approach:
+
+- **Camoufox** (custom Firefox fork) instead of Chromium — there is no CDP to detect because Firefox doesn't use it
+- **PyAutoGUI** for mouse and keyboard — input happens at the OS level, not through the browser's automation API. The browser genuinely doesn't know it's being automated. No JavaScript in the world can tell the difference between PyAutoGUI and a real human
+- **Real fingerprints** via browserforge — no spoofing means no inconsistencies between the main context and web workers (a common detection vector)
+- Everything packaged in a single Docker container — one command to run
 
 ## What's Inside
 
-| Component | Purpose |
-|-----------|---------|
-| **Camoufox** | Custom Firefox build, no CDP leaks |
-| **Xvfb** | Virtual framebuffer - run non-headless without a physical display |
-| **noVNC** | Web-based VNC client to watch the browser remotely |
-| **PyAutoGUI** | OS-level mouse/keyboard input (not DOM events) |
-| **HTTP API** | JSON API to control the browser remotely |
+| Component | What It Does |
+|-----------|-------------|
+| **Camoufox** | A custom build of Firefox with zero Chrome DevTools Protocol exposure. Bot detectors look for CDP signals — this browser simply doesn't have any. |
+| **Xvfb** | Virtual framebuffer that lets the browser run with a full graphical display inside a container, no physical monitor needed. This matters because headless mode is another detection signal. |
+| **PyAutoGUI** | Generates real OS-level mouse movements and keystrokes. The browser receives these as genuine user input — it has no idea it's being automated. |
+| **noVNC** | Web-based VNC client so you can watch the browser in real time from your own browser. Great for debugging and seeing exactly what's happening. |
+| **HTTP API** | A JSON API on port 8080 that lets you control everything — navigate pages, click elements, type text, take screenshots, manage tabs, handle cookies, and more. |
+
+Pre-installed extensions: **uBlock Origin** (ads/trackers), **LocalCDN** (prevents CDN tracking), **ClearURLs** (strips tracking params), **Consent-O-Matic** (auto-handles cookie popups).
 
 ## Quick Start
 
@@ -42,22 +53,509 @@ This container runs **Camoufox Firefox** with **zero CDP exposure**. Unlike Chro
 docker run -d --name browser \
   -p 8080:8080 \
   -p 5900:5900 \
+  psyb0t/stealthy-auto-browse
+```
+
+That's it. The browser is now running. Port **8080** is the HTTP API, port **5900** is the VNC viewer.
+
+**Navigate to a page:**
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "goto", "url": "https://example.com"}'
+```
+
+**Read the page content:**
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_text"}'
+```
+
+**Find every button, link, and input on the page:**
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get_interactive_elements"}'
+```
+
+This returns each element's coordinates, text, and CSS selector — everything you need to interact with it.
+
+**Click something with a real mouse movement (undetectable):**
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "system_click", "x": 500, "y": 300}'
+```
+
+**Type with real keystrokes (undetectable):**
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "system_type", "text": "hello world"}'
+```
+
+**Take a screenshot:**
+```bash
+curl http://localhost:8080/screenshot/browser?whLargest=512 -o screenshot.png
+```
+
+**Open a URL on startup:**
+```bash
+docker run -d -p 8080:8080 psyb0t/stealthy-auto-browse https://example.com
+```
+
+**Watch the browser live** at `http://localhost:5900/` (noVNC auto-connects).
+
+## How It Works
+
+Everything goes through a single HTTP API on port 8080. You send JSON commands and get JSON responses.
+
+**Command format:**
+```
+POST http://localhost:8080/
+Content-Type: application/json
+
+{"action": "action_name", "param1": "value1", "param2": "value2"}
+```
+
+**Response format:**
+```json
+{
+  "success": true,
+  "timestamp": 1234567890.123,
+  "data": { ... },
+  "error": "only present when success is false"
+}
+```
+
+The `data` field contains action-specific results (page text, element coordinates, cookie values, etc.).
+
+## Two Input Modes (This Is Important)
+
+There are two ways to interact with pages, and understanding the difference is key to not getting detected.
+
+### System Input — Undetectable
+
+Actions: `system_click`, `mouse_move`, `mouse_click`, `system_type`, `send_key`, `scroll`
+
+These use PyAutoGUI to generate **real OS-level events**. The mouse physically moves across the virtual screen with human-like curves and jitter. The keyboard generates real keystroke events. The browser has absolutely no way to know these aren't from a real human sitting at a computer.
+
+System input uses **viewport coordinates** (x, y pixel positions). Get these from `get_interactive_elements`.
+
+### Playwright Input — Detectable But Convenient
+
+Actions: `click`, `fill`, `type`
+
+These use Playwright's DOM automation to find elements by **CSS selector or XPath** and dispatch events through the browser's API. Faster and easier (no coordinate math), but the event injection patterns are theoretically detectable by sophisticated behavioral analysis.
+
+### Which Should You Use?
+
+- **Site has bot detection?** Use system input. Always.
+- **Just scraping something that doesn't fight back?** Playwright input is fine and easier.
+- **Filling forms on a protected site?** `system_click` to focus the field, then `system_type` to enter text.
+- **Have a CSS selector but no coordinates?** Use `click`. Have coordinates from `get_interactive_elements`? Use `system_click`.
+
+## HTTP API
+
+### Endpoints
+
+| Endpoint | Method | What It Does |
+|----------|--------|-------------|
+| `/` | POST | Execute any browser action (see Actions Reference below) |
+| `/screenshot/browser` | GET | Browser viewport as PNG — what the page looks like |
+| `/screenshot/desktop` | GET | Full virtual desktop as PNG — including browser chrome |
+| `/state` | GET | Current URL, page title, and window offset as JSON |
+| `/health` | GET | Returns `ok` when the browser is ready |
+
+### Example: Full Login Flow (Undetectable)
+
+```bash
+API=http://localhost:8080
+
+# 1. Navigate to login page
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "goto", "url": "https://example.com/login"}'
+
+# 2. Find all interactive elements (buttons, inputs, links)
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "get_interactive_elements"}'
+# Returns elements with x, y coordinates, text, and CSS selectors
+
+# 3. Click the email field (use coordinates from step 2)
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "system_click", "x": 400, "y": 200}'
+
+# 4. Type email with human-like keystrokes
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "system_type", "text": "user@example.com"}'
+
+# 5. Tab to password field
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "send_key", "key": "tab"}'
+
+# 6. Type password
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "system_type", "text": "secretpassword"}'
+
+# 7. Press Enter to submit
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "send_key", "key": "enter"}'
+
+# 8. Wait for redirect to dashboard
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "wait_for_url", "url": "**/dashboard", "timeout": 15}'
+
+# 9. Verify we're logged in
+curl -X POST $API -H 'Content-Type: application/json' \
+  -d '{"action": "get_text"}'
+```
+
+Every step uses OS-level input. The site sees a real human typing at a natural speed with randomized delays. No CDP signals. No automation fingerprints.
+
+## Actions Reference
+
+All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
+
+### Navigation
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `goto` | `url`, `wait_until` | Navigate to a URL. `wait_until` controls when the page is considered loaded: `"domcontentloaded"` (default, fast), `"load"` (all resources), `"networkidle"` (no network activity for 500ms). |
+| `back` | — | Go back in browser history. |
+| `forward` | — | Go forward in browser history. |
+| `refresh` | — | Reload the current page. |
+
+### System Input (OS-Level, Undetectable)
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `system_click` | `x`, `y`, `duration` | Moves the mouse to viewport coordinates with a **human-like curved path** (random jitter, eased acceleration), then clicks. The primary way to click things when stealth matters. `duration` controls movement time (random 0.2-0.6s if omitted). |
+| `mouse_move` | `x`, `y`, `duration` | Moves the mouse with human-like movement but does **not** click. Use to hover over elements (trigger dropdown menus, tooltips) or simulate natural mouse behavior between actions. |
+| `mouse_click` | `x`, `y` (optional) | Clicks at a position or wherever the mouse currently is. Unlike `system_click`, this does **not** do the smooth mouse movement first — it's a direct click. Use after `mouse_move` when you want to separate movement and click. |
+| `system_type` | `text`, `interval` | Types text character-by-character via **real OS keystrokes**. Each key has a randomized delay (jittered around `interval`, default 0.08s) to mimic human typing speed. You must focus an input field first. |
+| `send_key` | `key` | Sends a keyboard key or combo. Examples: `"enter"`, `"tab"`, `"escape"`, `"backspace"`, `"ctrl+a"`, `"ctrl+shift+t"`. Uses PyAutoGUI key names. |
+| `scroll` | `amount`, `x`, `y` | Scrolls using the mouse wheel. **Negative = scroll down**, positive = scroll up. If `x`, `y` are provided, moves the mouse there first (useful for scrolling inside a specific element). |
+| `scroll_to_bottom` | `delay` | Scrolls the entire page top-to-bottom using JavaScript, then back to top. Triggers lazy-loaded content. `delay` (default 0.4s) is the pause between scroll steps. |
+| `scroll_to_bottom_humanized` | `min_clicks`, `max_clicks`, `delay` | Same as above but uses **real mouse wheel scrolling** with randomized amounts and jittered delays. Undetectable. |
+
+### Playwright Input (DOM Events, Detectable)
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `click` | `selector` | Clicks an element by CSS selector or XPath (`xpath=//button[@id='submit']`). Faster than `system_click` but uses Playwright's DOM event injection. |
+| `fill` | `selector`, `value` | Sets an input field's value instantly. Clears existing content first. Fast but doesn't generate individual keystroke events — detectable. |
+| `type` | `selector`, `text`, `delay` | Types into an element character-by-character via Playwright. Middle ground between `fill` (instant) and `system_type` (OS-level). `delay` defaults to 0.05s between keys. |
+
+### Page Inspection
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `get_interactive_elements` | `visible_only` | Scans the page and returns **every** interactive element (buttons, links, inputs, selects, textareas) with their viewport coordinates (`x`, `y`), dimensions (`w`, `h`), `text`, CSS `selector`, and `visible` status. This is how you find what to click. |
+| `get_text` | — | Returns all visible text from the page body (truncated to 10,000 chars). Usually the first thing to call after navigating — tells you what's on the page without a screenshot. |
+| `get_html` | — | Returns the full HTML source of the page. Use when `get_text` doesn't give enough structure. |
+| `eval` | `expression` | Executes JavaScript in the page context and returns the result. Example: `"document.title"`, `"document.querySelectorAll('a').length"`. |
+
+### Wait Conditions
+
+Use these instead of `sleep` — they wait for **actual page state**, not arbitrary time.
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `wait_for_element` | `selector`, `state`, `timeout` | Waits for an element to reach a state. `state`: `"visible"` (default), `"hidden"`, `"attached"`, `"detached"`. `timeout` in seconds (default 30). CSS or XPath. |
+| `wait_for_text` | `text`, `timeout` | Waits for specific text to appear anywhere on the page (substring match). |
+| `wait_for_url` | `url`, `timeout` | Waits for the URL to match a glob pattern. `*` matches any chars except `/`, `**` matches everything. Example: `"**/dashboard"`. |
+| `wait_for_network_idle` | `timeout` | Waits until no network requests have been made for 500ms. Useful for pages that load content dynamically. |
+
+### Tab Management
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `list_tabs` | — | Returns all open tabs with their index, URL, and which one is active. |
+| `new_tab` | `url`, `wait_until` | Opens a new tab (becomes the active tab). Optionally navigates to a URL. |
+| `switch_tab` | `index` | Switches the active tab by index (0-based). All subsequent actions operate on the active tab. |
+| `close_tab` | `index` (optional) | Closes a tab. If no index, closes the active tab. After closing, the last remaining tab becomes active. |
+
+### Dialog Handling
+
+Browsers have modal dialogs (alert, confirm, prompt) that **block the page** until dismissed.
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `handle_dialog` | `accept`, `text` | Pre-configures how the **next** dialog will be handled. `accept`: `true` = click OK, `false` = click Cancel. `text`: response for prompt dialogs. **You MUST call this BEFORE the action that triggers the dialog**, or the page will hang forever. |
+| `get_last_dialog` | — | Returns info about the last dialog: `type` (alert/confirm/prompt/beforeunload), `message`, `default_value`, `buttons`. |
+
+### Cookies
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `get_cookies` | `urls` (optional) | Returns all browser cookies. Optionally filter by URL list. Each cookie includes name, value, domain, path, httpOnly, secure, etc. |
+| `set_cookie` | `name`, `value`, `url`/`domain`, ... | Sets a cookie. Needs at minimum: `name`, `value`, and either `url` or `domain`. Accepts all standard cookie fields (path, httpOnly, secure, sameSite, expires). |
+| `delete_cookies` | — | Clears all cookies from the browser context. |
+
+### Storage
+
+Access the page's localStorage and sessionStorage. Storage is per-origin — you must be on the right page.
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `get_storage` | `type` | Returns all items as key-value pairs. `type`: `"local"` (default) or `"session"`. |
+| `set_storage` | `type`, `key`, `value` | Sets a single key-value pair. |
+| `clear_storage` | `type` | Clears all items. |
+
+### Downloads & Uploads
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `get_last_download` | — | Returns info about the most recent file download: `url`, `filename`, and local `path` inside the container. Returns `null` if nothing downloaded yet. |
+| `upload_file` | `selector`, `file_path` | Programmatically sets a file on an `<input type="file">` element without opening the OS file picker. File must exist inside the container (use `docker cp` to copy files in). You still need to submit the form after. |
+
+### Network Logging
+
+Record all HTTP requests and responses the page makes. Useful for finding API endpoints, debugging, or verifying resources loaded.
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `enable_network_log` | — | Starts recording. Each entry captures: URL, method, resource type (fetch/document/script/image/etc), status code, and timestamp. |
+| `disable_network_log` | — | Stops recording. Already-captured entries remain. |
+| `get_network_log` | — | Returns all captured entries with their count. |
+| `clear_network_log` | — | Deletes captured entries. Keeps logging on if it was on. |
+
+### Display & Calibration
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `calibrate` | — | Recalculates the mapping between viewport coordinates (from `get_interactive_elements`) and screen coordinates (what PyAutoGUI uses). The browser window has chrome (title bar, etc.) that offsets the content area. **Call this after entering/exiting fullscreen**, or if `system_click` seems to be hitting the wrong spot. Auto-calculated at startup. |
+| `get_resolution` | — | Returns the virtual display resolution (width, height). |
+| `enter_fullscreen` | — | Puts the browser in fullscreen mode (hides address bar and window chrome). Call `calibrate` after. |
+| `exit_fullscreen` | — | Exits fullscreen mode. Call `calibrate` after. |
+
+### Utility
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `ping` | — | Health check that returns `"pong"` and the current page URL. |
+| `sleep` | `duration` | Pauses for N seconds. Prefer `wait_for_element` or `wait_for_text` when waiting for page content. |
+| `close` | — | Shuts down the browser. The container stops after this. |
+
+## Screenshots
+
+Both screenshot endpoints support resize parameters. The default resolution is 1920x1080 — that's a big image. You almost always want to resize.
+
+```bash
+# Resize to 512px on longest side (best default — keeps aspect ratio, manageable size)
+curl http://localhost:8080/screenshot/browser?whLargest=512 -o screenshot.png
+
+# Resize to 800px wide
+curl http://localhost:8080/screenshot/browser?width=800 -o screenshot.png
+
+# Exact 400x400 dimensions
+curl http://localhost:8080/screenshot/browser?width=400&height=400 -o screenshot.png
+
+# Full desktop (includes browser chrome, taskbar, etc.)
+curl http://localhost:8080/screenshot/desktop?whLargest=512 -o desktop.png
+```
+
+| Parameter | What It Does |
+|-----------|-------------|
+| `whLargest=512` | Scales so the largest dimension is 512px, keeps aspect ratio. Use this by default. |
+| `width=800` | Scales to 800px wide, keeps aspect ratio. |
+| `height=300` | Scales to 300px tall, keeps aspect ratio. |
+| `width=400&height=400` | Forces exact dimensions (may stretch). |
+
+## Page Loaders (URL-Triggered Automation)
+
+Page loaders are like **Greasemonkey/Tampermonkey userscripts** but for the HTTP API. You define a set of actions that automatically run whenever the browser navigates to a matching URL. Instead of manually sending a sequence of commands every time you visit a site, you write it once as a YAML file and the container handles it.
+
+This is useful for things like: removing cookie popups, dismissing overlays, waiting for dynamic content, cleaning up pages before scraping, or any repetitive setup you'd otherwise do manually every time.
+
+### How They Work
+
+1. You create YAML files that define URL patterns and a list of steps
+2. Mount those files into the container at `/loaders`
+3. Whenever `goto` navigates to a URL that matches a loader's pattern, the loader's steps run automatically instead of the default navigation
+
+**The steps are the exact same actions as the HTTP API.** Every action you can send via `POST /` (goto, eval, click, system_click, sleep, scroll, wait_for_element, etc.) works as a loader step. Same names, same parameters.
+
+### Setup
+
+```bash
+docker run -d -p 8080:8080 -p 5900:5900 \
+  -v ./my-loaders:/loaders \
+  psyb0t/stealthy-auto-browse
+```
+
+### Loader Format
+
+```yaml
+name: Human-readable name for this loader
+match:
+  domain: example.com         # Exact hostname match (www. is stripped automatically)
+  path_prefix: /articles      # URL path must start with this
+  regex: "article/\\d+"       # Full URL must match this regex
+steps:
+  - action: goto              # Same actions as the HTTP API
+    url: "${url}"             # ${url} is replaced with the original URL
+    wait_until: networkidle
+  - action: eval
+    expression: "document.querySelector('.cookie-banner')?.remove()"
+  - action: wait_for_element
+    selector: "#main-content"
+    timeout: 10
+```
+
+### Match Rules
+
+All match fields are **optional**, but at least one is required. If you specify multiple fields, **all** of them must match for the loader to trigger:
+
+- **`domain`**: Exact hostname. `www.` is stripped from both sides before comparing, so `domain: example.com` matches `www.example.com` too.
+- **`path_prefix`**: The URL path must start with this string. `path_prefix: /blog` matches `/blog`, `/blog/post-1`, `/blog/archive`, etc.
+- **`regex`**: The full URL is tested against this regular expression.
+
+### The `${url}` Placeholder
+
+In any string value within a step, `${url}` is replaced with the original URL that was passed to `goto`. This lets you do things like navigate to the URL with custom wait settings, or pass it to JavaScript:
+
+```yaml
+steps:
+  - action: goto
+    url: "${url}"
+    wait_until: networkidle
+  - action: eval
+    expression: "console.log('Loaded:', '${url}')"
+```
+
+### Practical Example: Clean Scraping
+
+Say you're scraping a news site that has cookie popups, newsletter modals, and lazy-loaded content. Without a loader, you'd send 5+ commands after every `goto`. With a loader:
+
+```yaml
+# loaders/news_site.yaml
+name: News Site Cleanup
+match:
+  domain: news-site.com
+steps:
+  # Navigate with full network wait so everything loads
+  - action: goto
+    url: "${url}"
+    wait_until: networkidle
+
+  # Wait for the main content to be there
+  - action: wait_for_element
+    selector: "article"
+    timeout: 10
+
+  # Kill the cookie popup
+  - action: eval
+    expression: "document.querySelector('.cookie-consent')?.remove()"
+
+  # Kill the newsletter modal
+  - action: eval
+    expression: "document.querySelector('.newsletter-overlay')?.remove()"
+
+  # Scroll to trigger lazy-loaded images
+  - action: scroll_to_bottom
+    delay: 0.3
+
+  # Small pause for everything to settle
+  - action: sleep
+    duration: 1
+```
+
+Now when you `goto` any URL on `news-site.com`, all of this happens automatically. Your response includes `"loader": "News Site Cleanup"` so you know it triggered.
+
+### Response When a Loader Triggers
+
+```json
+{
+  "success": true,
+  "data": {
+    "loader": "News Site Cleanup",
+    "steps_executed": 6,
+    "last_result": { "slept": 1 }
+  }
+}
+```
+
+## Environment Variables
+
+| Variable | Default | What It Does |
+|----------|---------|-------------|
+| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution. The browser runs at this size. Common alternatives: `1280x720`, `1366x768`, `2560x1440`. |
+| `XVFB_DEPTH` | `24` | Color depth of the virtual display (16, 24, or 32 bit). 24 is fine for everything. |
+| `TZ` | `UTC` | **Timezone — this one matters for stealth.** Bot detectors compare your browser's timezone against your IP's geographic location. If your IP says you're in Romania but your timezone says UTC, that's a red flag. Set this to match your IP: `Europe/Bucharest`, `America/New_York`, `Asia/Tokyo`, etc. |
+| `LANG` | `en_US.UTF-8` | Browser locale/language. |
+| `USE_VIEWPORT` | `false` | Enables Playwright viewport control. Required if you need widths below ~450px (Firefox minimum without it). **Reduces stealth** because it adds Playwright viewport management. Only use for mobile layout testing on sites that don't have bot detection. |
+| `LOADERS_DIR` | `/loaders` | Directory the container scans for page loader YAML files. |
+| `PROXY_URL` | — | Routes all browser traffic through an HTTP proxy. Format: `http://user:pass@host:port`. Useful with residential proxies to match your IP to a specific location. |
+
+### Examples
+
+**Match timezone to IP location (important for stealth):**
+```bash
+docker run -d -e TZ=Europe/Bucharest -p 8080:8080 psyb0t/stealthy-auto-browse
+```
+
+**Use a proxy:**
+```bash
+docker run -d -e PROXY_URL=http://user:pass@proxy:8888 -p 8080:8080 psyb0t/stealthy-auto-browse
+```
+
+**Custom resolution:**
+```bash
+docker run -d -e XVFB_RESOLUTION=1280x720 -p 8080:8080 psyb0t/stealthy-auto-browse
+```
+
+**Mobile viewport (for layout testing, reduces stealth):**
+```bash
+docker run -d -e USE_VIEWPORT=true -e XVFB_RESOLUTION=375x812 -p 8080:8080 psyb0t/stealthy-auto-browse
+```
+
+## Persistent Profiles
+
+Mount a directory to `/userdata` to keep cookies, localStorage, browser sessions, and the generated fingerprint across container restarts. Without this, every restart is a fresh browser with a new identity.
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -p 5900:5900 \
   -v ./my-profile:/userdata \
   psyb0t/stealthy-auto-browse
 ```
 
-- **Port 8080** - HTTP API for browser control
-- **Port 5900** - noVNC web interface
-- **`/userdata`** - Persistent browser profile (cookies, sessions, etc.)
+This is how you maintain a logged-in session without re-authenticating every time the container restarts.
 
-Open a URL on startup:
+## Browser Extensions
+
+Pre-installed in every container:
+
+| Extension | What It Does |
+|-----------|-------------|
+| **uBlock Origin** | Blocks ads, trackers, and annoyances. Reduces page load noise and prevents tracking scripts from running. |
+| **LocalCDN** | Intercepts requests to common CDNs (Google, Cloudflare, etc.) and serves the resources locally. Prevents CDN providers from tracking you across sites. |
+| **ClearURLs** | Strips tracking parameters from URLs (utm_source, fbclid, gclid, etc.) so your navigation doesn't leak referral data. |
+| **Consent-O-Matic** | Automatically handles cookie consent popups — clicks "reject all" or minimal consent so you don't have to deal with them. |
+
+Want to add more? Mount a persistent profile and install them through the browser:
+
+1. Run with `-v ./my-profile:/userdata`
+2. Open VNC at `http://localhost:5900/`
+3. Navigate to `about:addons` and install whatever you want
+4. Extensions persist across restarts via the profile volume
+
+## VNC Access
+
+Watch the browser in real-time through your web browser. The VNC viewer auto-connects when you open it.
+
 ```bash
-docker run -d psyb0t/stealthy-auto-browse https://example.com
+docker run -d -p 5900:5900 -p 8080:8080 psyb0t/stealthy-auto-browse
 ```
+
+Open `http://localhost:5900/` — you'll see exactly what the browser sees. Useful for debugging automation scripts, watching logins, or just making sure things are working.
 
 ## OpenClaw / ClawHub Skill
 
-This project is available as an [OpenClaw](https://docs.openclaw.ai/) skill on [ClawHub](https://clawhub.ai/psyb0t/stealthy-auto-browse). Install it and any OpenClaw-compatible agent can use the browser on demand.
+This project is available as an [OpenClaw](https://docs.openclaw.ai/) skill on [ClawHub](https://clawhub.ai/psyb0t/stealthy-auto-browse). Install it and any OpenClaw-compatible AI agent can use the browser on demand — it loads automatically when the agent needs to browse something that regular HTTP requests can't handle.
 
 **Install:**
 
@@ -81,461 +579,43 @@ clawhub install psyb0t/stealthy-auto-browse
 }
 ```
 
-The skill loads on demand when browser automation is needed — it won't consume tokens until the agent actually needs to browse. Start the container with `docker run -d -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse` and the agent handles the rest.
+Start the container, and the agent handles the rest. The skill only loads when browser automation is actually needed — it won't consume tokens until then.
 
 ## Claude Code Integration
 
-This container works great with [Claude Code](https://claude.ai/code). Claude can launch the browser, navigate pages, read content, click elements, and fill forms - all through the HTTP API.
+This container works great with [Claude Code](https://claude.ai/code). Claude can launch the browser, navigate pages, read content, click elements, fill forms, and handle complex multi-step workflows — all through the HTTP API.
 
 For a ready-to-use Claude Code setup, check out [docker-claude-code](https://github.com/psyb0t/docker-claude-code).
 
 See [`.claude/INSTRUCTIONS.md`](.claude/INSTRUCTIONS.md) for the full guide Claude uses to control the browser.
 
-## HTTP API
-
-The container exposes an HTTP API on port 8080.
-
-### Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | POST | Execute browser commands |
-| `/screenshot/browser` | GET | Get browser viewport screenshot as PNG (supports resize query params) |
-| `/screenshot/desktop` | GET | Get full desktop screenshot as PNG (supports resize query params) |
-| `/state` | GET | Get browser state as JSON |
-| `/health` | GET | Health check |
-
-### Example Commands
-
-```bash
-# Navigate to URL
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "goto", "url": "https://example.com"}'
-
-# System-level click (PyAutoGUI mouse movement + click)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "system_click", "x": 500, "y": 300}'
-
-# System-level typing (PyAutoGUI with variable delays)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "system_type", "text": "hello world"}'
-
-# Send keyboard key (pyautogui)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "send_key", "key": "enter"}'
-
-# Send key combo
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "send_key", "key": "ctrl+a"}'
-
-# Playwright click (CSS selector)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "click", "selector": "button#submit"}'
-
-# Fill form field
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "fill", "selector": "input[name=email]", "value": "test@example.com"}'
-
-# Scroll page
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "scroll", "amount": -3}'
-
-# Get interactive elements
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_interactive_elements"}'
-
-# Get page text
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_text"}'
-
-# Execute JavaScript
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "eval", "expression": "document.title"}'
-
-# Calibrate coordinate offset
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "calibrate"}'
-
-# Get current resolution info
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_resolution"}'
-
-# Open a new tab
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "new_tab", "url": "https://example.com"}'
-
-# List all open tabs
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "list_tabs"}'
-
-# Switch to tab by index
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "switch_tab", "index": 0}'
-
-# Close a tab by index
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "close_tab", "index": 1}'
-
-# Get all cookies
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_cookies"}'
-
-# Set a cookie
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "set_cookie", "name": "session", "value": "abc123", "url": "https://example.com"}'
-
-# Delete all cookies
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "delete_cookies"}'
-
-# Pre-configure dialog handling (accept/dismiss next dialog)
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "handle_dialog", "accept": true, "text": "my prompt response"}'
-
-# Get info about the last dialog
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_last_dialog"}'
-
-# Upload a file to a file input
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "upload_file", "selector": "input[type=file]", "file_path": "/tmp/document.pdf"}'
-
-# Wait for an element to appear
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "wait_for_element", "selector": "#results", "state": "visible", "timeout": 10}'
-
-# Wait for specific text to appear on page
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "wait_for_text", "text": "Success", "timeout": 15}'
-
-# Wait for URL to match a pattern
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "wait_for_url", "url": "**/dashboard", "timeout": 10}'
-
-# Enable network request/response logging
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "enable_network_log"}'
-
-# Get captured network log
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "get_network_log"}'
-
-# Close browser
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "close"}'
-```
-
-## Actions Reference
-
-### Navigation
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `goto` | `url`, `wait_until` | Navigate to URL |
-| `back` | - | Go back in browser history |
-| `forward` | - | Go forward in browser history |
-| `refresh` | - | Reload current page |
-
-### Playwright Input (DOM Events)
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `click` | `selector` | Playwright click on a CSS selector (DOM event) |
-| `fill` | `selector`, `value` | Fill input field (clears existing value first) |
-| `type` | `selector`, `text`, `delay` | Type into element character by character |
-
-### System Input (OS-Level via PyAutoGUI)
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `mouse_move` | `x`, `y`, `duration` | Human-like mouse movement to coordinates |
-| `mouse_click` | `x`, `y` (optional) | PyAutoGUI click at position or current location |
-| `system_click` | `x`, `y`, `duration` | PyAutoGUI move + click (combined) |
-| `scroll` | `amount`, `x`, `y` | Scroll page (negative = down) |
-| `scroll_to_bottom` | `delay` | Fast JS scroll to bottom, triggers lazy loading |
-| `scroll_to_bottom_humanized` | `min_clicks`, `max_clicks`, `delay` | OS-level humanized scroll to bottom |
-| `system_type` | `text`, `interval` | PyAutoGUI typing with variable delays |
-| `send_key` | `key` | Send keyboard key via PyAutoGUI (e.g., `enter`, `backspace`, `ctrl+a`) |
-
-### Tab Management
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `list_tabs` | - | List all open tabs with URLs and active status |
-| `new_tab` | `url`, `wait_until` | Open a new tab, optionally navigate to URL |
-| `switch_tab` | `index` | Switch to tab by index |
-| `close_tab` | `index` (optional) | Close tab by index, or close active tab |
-
-### Dialog Handling
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `handle_dialog` | `accept` (bool), `text` | Pre-configure how to handle the next browser dialog (alert/confirm/prompt) |
-| `get_last_dialog` | - | Get info about the last dialog that appeared (type, message, buttons) |
-
-### Cookie Management
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `get_cookies` | `urls` (optional list) | Get all cookies, optionally filtered by URLs |
-| `set_cookie` | `name`, `value`, `url`, ... | Set a cookie (accepts all Playwright cookie fields) |
-| `delete_cookies` | - | Delete all cookies |
-
-### Storage
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `get_storage` | `type` (`local`/`session`) | Get all localStorage or sessionStorage items |
-| `set_storage` | `type`, `key`, `value` | Set a storage item |
-| `clear_storage` | `type` (`local`/`session`) | Clear localStorage or sessionStorage |
-
-### Downloads
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `get_last_download` | - | Get info about the last downloaded file (url, filename, path) |
-
-### Network Logging
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `enable_network_log` | - | Start capturing network requests and responses |
-| `disable_network_log` | - | Stop capturing network traffic |
-| `get_network_log` | - | Get captured network log entries |
-| `clear_network_log` | - | Clear all captured network log entries |
-
-### Wait Conditions
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `wait_for_element` | `selector`, `state`, `timeout` | Wait for element to reach state (`visible`, `hidden`, `attached`, `detached`) |
-| `wait_for_text` | `text`, `timeout` | Wait for text to appear on the page |
-| `wait_for_url` | `url`, `timeout` | Wait for URL to match a pattern (supports globs like `**/dashboard`) |
-| `wait_for_network_idle` | `timeout` | Wait for network activity to settle |
-
-### File Upload
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `upload_file` | `selector`, `file_path` | Upload a file to a file input element |
-
-### Page Inspection
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `get_interactive_elements` | `visible_only` (bool) | Get clickable/interactive elements on the page |
-| `get_text` | - | Get page text content (up to 10,000 chars) |
-| `get_html` | - | Get full page HTML |
-| `eval` | `expression` | Execute JavaScript and return the result |
-
-### Display & Calibration
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `calibrate` | - | Get window offset for coordinate mapping |
-| `get_resolution` | - | Get current display resolution |
-| `enter_fullscreen` | - | Enter browser fullscreen mode (hides browser chrome) |
-| `exit_fullscreen` | - | Exit browser fullscreen mode |
-
-### Utility
-
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `ping` | - | Health check, returns current URL |
-| `close` | - | Close browser and shutdown |
-| `sleep` | `duration` | Wait for N seconds |
-
-### Screenshot Resize
-
-Both screenshot endpoints accept optional query parameters for resizing:
-
-| Parameter | Description |
-|-----------|-------------|
-| `width` | Resize to this width, keep aspect ratio |
-| `height` | Resize to this height, keep aspect ratio |
-| `width` + `height` | Resize to exact dimensions (ignores aspect ratio) |
-| `whLargest` | Set the largest side (width or height) to this value, keep aspect ratio |
-
-```bash
-# Resize to 512px on longest side (aspect ratio preserved)
-curl http://localhost:8080/screenshot/browser?whLargest=512 -o screenshot.png
-
-# Resize to 800px wide (aspect ratio preserved)
-curl http://localhost:8080/screenshot/browser?width=800 -o screenshot.png
-
-# Resize to exact 400x400 (stretches)
-curl http://localhost:8080/screenshot/browser?width=400&height=400 -o screenshot.png
-
-# Desktop screenshot resized to 300px tall
-curl http://localhost:8080/screenshot/desktop?height=300 -o screenshot.png
-```
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution (WxH) |
-| `XVFB_DEPTH` | `24` | Color depth (16, 24, or 32) |
-| `TZ` | `UTC` | Timezone (e.g., `Europe/Bucharest`, `America/New_York`). Set to match your IP location. |
-| `LANG` | `en_US.UTF-8` | Locale for browser language |
-| `USE_VIEWPORT` | `false` | Enable Playwright viewport control. Required for narrow widths (Firefox has a ~450px minimum without it). **Warning:** May reduce stealth. |
-| `LOADERS_DIR` | `/loaders` | Directory containing YAML page loaders |
-| `PROXY_URL` | - | HTTP proxy URL for all browser traffic (e.g., `http://user:pass@host:port`) |
-
-**Important:** Set `TZ` to match your IP's geographic location to avoid detection. Example:
-
-```bash
-docker run -d -e TZ=Europe/Bucharest -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse
-```
-
-**Mobile viewport example** (for testing mobile layouts on sites that don't need stealth):
-
-```bash
-docker run -d \
-  -e USE_VIEWPORT=true \
-  -e XVFB_RESOLUTION=375x812 \
-  -p 8080:8080 -p 5900:5900 \
-  psyb0t/stealthy-auto-browse
-```
-
-## Testing
-
-Tests are located in the `tests/` directory. Run the full test suite with:
-
-```bash
-./test.sh
-```
-
-Run specific tests by passing their names as arguments:
-
-```bash
-./test.sh test_proxy test_upload_file
-```
-
-## Page Loaders
-
-Mount a directory of YAML files to `/loaders` to define URL-triggered automation. When `goto` matches a loader, the loader's steps run instead of the default navigation. Each step is an API action — same format as POST body.
-
-```bash
-docker run -d -p 8080:8080 -p 5900:5900 \
-  -v ./loaders:/loaders \
-  psyb0t/stealthy-auto-browse
-```
-
-Example loader (`loaders/my_loader.yaml`):
-```yaml
-name: Clean Up Example.com
-match:
-  domain: example.com       # exact hostname (strips www.)
-  path_prefix: /page        # URL path starts with
-  # regex: "example\\.com/page/\\d+"  # or use regex
-steps:
-  - action: goto
-    url: "${url}"            # ${url} = the original URL
-    wait_until: networkidle
-  - action: sleep
-    duration: 1
-  - action: eval
-    expression: "document.querySelector('.popup')?.remove()"
-  - action: scroll_to_bottom
-    delay: 0.4
-```
-
-All match fields are optional (at least one required). All must match for the loader to trigger. See `loaders/` directory for real examples.
-
-## Persistent Profiles
-
-Mount a directory to `/userdata` to persist cookies, localStorage, extensions, and session data across container restarts.
-
-```bash
-docker run -d \
-  -p 8080:8080 \
-  -p 5900:5900 \
-  -v ./my-profile:/userdata \
-  psyb0t/stealthy-auto-browse
-```
-
-## Browser Extensions
-
-The following extensions are **pre-installed** in the container:
-
-| Extension | Purpose |
-|-----------|---------|
-| **uBlock Origin** | Blocks ads, trackers, and annoyances |
-| **LocalCDN** | Serves common JS libraries locally (prevents CDN tracking) |
-| **ClearURLs** | Strips tracking parameters from URLs (utm_*, fbclid, etc.) |
-| **Consent-O-Matic** | Auto-handles cookie consent popups |
-
-Additional extensions can be installed via the persistent profile:
-
-1. Mount a profile directory: `-v ./my-profile:/userdata`
-2. Open VNC at `http://localhost:5900/`
-3. Navigate to `about:addons` and install extensions
-4. Extensions persist across restarts
-
-## VNC Access
-
-Watch the browser in real-time via noVNC:
-
-```bash
-docker run -d -p 5900:5900 psyb0t/stealthy-auto-browse
-```
-
-Open `http://localhost:5900/` (auto-connects).
-
 ## Bot Detection Test Results
 
-Tested against major bot detection services (January 2025):
+Tested against major bot detection services:
 
-| Site | Result | Notes |
-|------|--------|-------|
-| [SannySoft](https://bot.sannysoft.com/) | Pass | All Intoli + fingerprint scanner tests pass |
-| [Incolumitas](https://bot.incolumitas.com/) | Pass | All new detection tests OK |
-| [Rebrowser Bot Detector](https://bot-detector.rebrowser.net/) | Pass | No CDP leaks, no webdriver, viewport OK |
-| [CreepJS](https://abrahamjuliot.github.io/creepjs/) | Pass | 0% stealth detected, chromium: false |
-| [BrowserScan](https://www.browserscan.net/bot-detection) | Pass | WebDriver, CDP, Navigator all "Normal" |
-| [Pixelscan](https://pixelscan.net/) | Pass | Bot check passed (set TZ to match IP for full pass) |
-| [BrowserLeaks WebRTC](https://browserleaks.com/webrtc) | Pass | No WebRTC IP leak |
-| [DeviceAndBrowserInfo](https://deviceandbrowserinfo.com/are_you_a_bot) | Pass | "You are human!" - all 19 checks green |
-| [IpHey](https://iphey.com/) | Pass | "Trustworthy" rating |
-| [Fingerprint.com](https://fingerprint.com/demo/) | Pass | Identified as normal Firefox, no bot flags |
+| Service | Result | What They Check |
+|---------|--------|----------------|
+| [CreepJS](https://abrahamjuliot.github.io/creepjs/) | **Pass** | Canvas/WebGL fingerprint consistency, lies detection, worker comparison |
+| [BrowserScan](https://www.browserscan.net/bot-detection) | **Pass** | WebDriver flag, CDP signals, navigator properties |
+| [Pixelscan](https://pixelscan.net/) | **Pass** | Fingerprint coherence, timezone/IP match, WebRTC leaks |
+| [Cloudflare](https://cloudflare.com) | **Pass** | Challenge pages, Turnstile, bot management |
+| [SannySoft](https://bot.sannysoft.com/) | **Pass** | Intoli + fingerprint scanner tests |
+| [Incolumitas](https://bot.incolumitas.com/) | **Pass** | Modern detection techniques |
+| [Rebrowser](https://bot-detector.rebrowser.net/) | **Pass** | CDP leak detection, webdriver, viewport analysis |
+| [BrowserLeaks WebRTC](https://browserleaks.com/webrtc) | **Pass** | WebRTC IP leak detection |
+| [DeviceAndBrowserInfo](https://deviceandbrowserinfo.com/are_you_a_bot) | **Pass** | 19 checks, all green, "You are human!" |
+| [IpHey](https://iphey.com/) | **Pass** | "Trustworthy" rating |
+| [Fingerprint.com](https://fingerprint.com/demo/) | **Pass** | Identified as normal Firefox, no bot flags |
 
-### Why It Works
+### Why It Actually Works
 
-- **No CDP exposure** - Camoufox is Firefox-based, no Chrome DevTools Protocol to detect
-- **No fingerprint spoofing** - Main context matches web workers (no inconsistencies)
-- `navigator.webdriver` returns `false`
-- Real OS-level input via PyAutoGUI (not DOM events)
+Most stealth tools try to **hide** automation signals. This container **doesn't have them in the first place**:
+
+- **No CDP** — Firefox doesn't have Chrome DevTools Protocol. There's nothing to hide because it doesn't exist.
+- **No fingerprint spoofing** — The fingerprint is generated once and applied consistently. Main context matches web workers (a common detection vector for spoofers).
+- **`navigator.webdriver` is `false`** — Not patched to return false, it's genuinely false because Camoufox doesn't set it.
+- **Real input events** — PyAutoGUI generates OS-level mouse and keyboard events. No DOM event injection for the browser to detect.
 
 ## License
 
-**WTFPL** - Do What The Fuck You Want To Public License
+**WTFPL** — Do What The Fuck You Want To Public License
