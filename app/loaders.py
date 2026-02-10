@@ -67,25 +67,27 @@ def _strip_www(host: str) -> str:
     return host
 
 
-def find_loader(loaders: list[Loader], url: str) -> Loader | None:
-    """Find first loader matching the given URL."""
+def _matches(loader: Loader, url: str, host: str, path: str) -> bool:
+    """Check if a loader matches the given URL parts."""
+    if loader.match_domain and _strip_www(loader.match_domain) != host:
+        return False
+    if loader.match_path_prefix and not path.startswith(loader.match_path_prefix):
+        return False
+    if loader.match_regex and not re.search(loader.match_regex, url):
+        return False
+    return True
+
+
+def find_loader(loaders_dir: str, url: str) -> Loader | None:
+    """Reload loaders from disk and find first matching the given URL."""
+    loaders = load_loaders(loaders_dir)
     parsed = urlparse(url)
     host = _strip_www(parsed.hostname or "")
     path = parsed.path or "/"
 
     for loader in loaders:
-        if loader.match_domain:
-            if _strip_www(loader.match_domain) != host:
-                continue
-
-        if loader.match_path_prefix:
-            if not path.startswith(loader.match_path_prefix):
-                continue
-
-        if loader.match_regex:
-            if not re.search(loader.match_regex, url):
-                continue
-
+        if not _matches(loader, url, host, path):
+            continue
         return loader
 
     return None

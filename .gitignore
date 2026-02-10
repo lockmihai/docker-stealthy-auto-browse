@@ -6,4 +6,4 @@ CLAUDE.md
 screenshot.png
 .testdata
 loaders/*
-!loaders/example.yaml
+!loaders/00_example.yaml

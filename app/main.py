@@ -31,7 +31,7 @@ from browser import Browser, BrowserConfig
 from PIL import Image
 from system import System
 
-from loaders import Loader, find_loader, load_loaders, substitute_url
+from loaders import find_loader, load_loaders, substitute_url
 
 # =============================================================================
 # CONTENT TYPES
@@ -77,8 +77,8 @@ system = System()
 # Global browser instance
 browser: Browser | None = None
 
-# Loaded page loaders
-loaders: list[Loader] = []
+# Loaders directory path
+loaders_dir: str = "/loaders"
 
 # Dialog handling state
 _last_dialog: dict | None = None
@@ -394,7 +394,7 @@ async def dispatch_action(cmd: dict) -> dict:
         # Check for matching loader (but not when called from execute_loader
         # to avoid infinite recursion)
         if not cmd.get("_from_loader"):
-            loader = find_loader(loaders, url)
+            loader = find_loader(loaders_dir, url)
             if loader:
                 log(f"Loader matched: {loader.name}")
                 return await execute_loader(loader, url)
@@ -655,7 +655,7 @@ async def dispatch_action(cmd: dict) -> dict:
 # =============================================================================
 
 
-async def execute_loader(loader: Loader, url: str) -> dict:
+async def execute_loader(loader, url: str) -> dict:
     """Execute a loader's steps, returning the final result."""
     results = []
     for step in loader.steps:
@@ -816,15 +816,15 @@ async def run_server(app: web.Application) -> None:
 
 
 async def main() -> None:
-    global browser, loaders
+    global browser, loaders_dir
 
     config = BrowserConfig()
 
-    # Load page loaders
+    # Set loaders directory
     loaders_dir = os.environ.get("LOADERS_DIR", "/loaders")
-    loaders = load_loaders(loaders_dir)
-    if loaders:
-        log(f"Loaded {len(loaders)} loader(s) from {loaders_dir}")
+    initial_loaders = load_loaders(loaders_dir)
+    if initial_loaders:
+        log(f"Found {len(initial_loaders)} loader(s) in {loaders_dir}")
 
     log("Starting browser")
 
