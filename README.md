@@ -211,7 +211,7 @@ curl -X POST $API -H 'Content-Type: application/json' \
   -d '{"action": "get_text"}'
 ```
 
-Every step uses OS-level input. The site sees a real human typing at a natural speed with randomized delays. No CDP signals. No automation fingerprints.
+Every interaction (clicks, typing, key presses) uses OS-level input. The site sees a real human typing at a natural speed with randomized delays. No CDP signals. No automation fingerprints.
 
 ## Actions Reference
 
@@ -222,9 +222,9 @@ All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
 | Action | Parameters | What It Does |
 |--------|------------|-------------|
 | `goto` | `url`, `wait_until` | Navigate to a URL. `wait_until` controls when the page is considered loaded: `"domcontentloaded"` (default, fast), `"load"` (all resources), `"networkidle"` (no network activity for 500ms). |
-| `back` | — | Go back in browser history. |
-| `forward` | — | Go forward in browser history. |
-| `refresh` | — | Reload the current page. |
+| `back` | `wait_until` (optional) | Go back in browser history. Returns new URL and title. |
+| `forward` | `wait_until` (optional) | Go forward in browser history. Returns new URL and title. |
+| `refresh` | `wait_until` (optional) | Reload the current page. Returns URL and title. |
 
 ### System Input (OS-Level, Undetectable)
 
@@ -236,8 +236,6 @@ All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
 | `system_type` | `text`, `interval` | Types text character-by-character via **real OS keystrokes**. Each key has a randomized delay (jittered around `interval`, default 0.08s) to mimic human typing speed. You must focus an input field first. |
 | `send_key` | `key` | Sends a keyboard key or combo. Examples: `"enter"`, `"tab"`, `"escape"`, `"backspace"`, `"ctrl+a"`, `"ctrl+shift+t"`. Uses PyAutoGUI key names. |
 | `scroll` | `amount`, `x`, `y` | Scrolls using the mouse wheel. **Negative = scroll down**, positive = scroll up. If `x`, `y` are provided, moves the mouse there first (useful for scrolling inside a specific element). |
-| `scroll_to_bottom` | `delay` | Scrolls the entire page top-to-bottom using JavaScript, then back to top. Triggers lazy-loaded content. `delay` (default 0.4s) is the pause between scroll steps. |
-| `scroll_to_bottom_humanized` | `min_clicks`, `max_clicks`, `delay` | Same as above but uses **real mouse wheel scrolling** with randomized amounts and jittered delays. Undetectable. |
 
 ### Playwright Input (DOM Events, Detectable)
 
@@ -278,11 +276,11 @@ Use these instead of `sleep` — they wait for **actual page state**, not arbitr
 
 ### Dialog Handling
 
-Browsers have modal dialogs (alert, confirm, prompt) that **block the page** until dismissed.
+Browsers have modal dialogs (alert, confirm, prompt). By default, dialogs are **auto-accepted** (clicks OK). Use `handle_dialog` to dismiss or provide prompt text.
 
 | Action | Parameters | What It Does |
 |--------|------------|-------------|
-| `handle_dialog` | `accept`, `text` | Pre-configures how the **next** dialog will be handled. `accept`: `true` = click OK, `false` = click Cancel. `text`: response for prompt dialogs. **You MUST call this BEFORE the action that triggers the dialog**, or the page will hang forever. |
+| `handle_dialog` | `accept`, `text` | Pre-configures how the **next** dialog will be handled. `accept`: `true` = click OK, `false` = click Cancel. `text`: response for prompt dialogs. **Call this BEFORE the action that triggers the dialog.** If you don't, the dialog is auto-accepted (clicks OK). You only need this if you want to dismiss (Cancel) or provide prompt text. |
 | `get_last_dialog` | — | Returns info about the last dialog: `type` (alert/confirm/prompt/beforeunload), `message`, `default_value`, `buttons`. |
 
 ### Cookies
@@ -329,6 +327,13 @@ Record all HTTP requests and responses the page makes. Useful for finding API en
 | `get_resolution` | — | Returns the virtual display resolution (width, height). |
 | `enter_fullscreen` | — | Puts the browser in fullscreen mode (hides address bar and window chrome). Call `calibrate` after. |
 | `exit_fullscreen` | — | Exits fullscreen mode. Call `calibrate` after. |
+
+### Scrolling
+
+| Action | Parameters | What It Does |
+|--------|------------|-------------|
+| `scroll_to_bottom` | `delay` | Scrolls the entire page top-to-bottom using **JavaScript** (`window.scrollBy`), then back to top. Useful for triggering lazy-loaded content. `delay` (default 0.4s) is the pause between scroll steps. This is fast but uses JS, not OS-level input. |
+| `scroll_to_bottom_humanized` | `min_clicks`, `max_clicks`, `delay` | Same goal as above but uses **real OS-level mouse wheel scrolling** (PyAutoGUI) with randomized scroll amounts and jittered delays. Undetectable by behavioral analysis. Slower but stealthy. |
 
 ### Utility
 
@@ -472,7 +477,7 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
   "data": {
     "loader": "News Site Cleanup",
     "steps_executed": 6,
-    "last_result": { "slept": 1 }
+    "last_result": { "success": true, "timestamp": 1234567890.456, "data": { "slept": 1 } }
   }
 }
 ```
@@ -481,7 +486,7 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
 
 | Variable | Default | What It Does |
 |----------|---------|-------------|
-| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution. The browser runs at this size. Common alternatives: `1280x720`, `1366x768`, `2560x1440`. |
+| `XVFB_RESOLUTION` | `1920x1080` | Virtual display resolution. The browser runs at this size. Can go smaller (e.g. `1280x720`, `1366x768`) but **not larger** than 1920x1080 — the virtual framebuffer maxes out at that size. |
 | `XVFB_DEPTH` | `24` | Color depth of the virtual display (16, 24, or 32 bit). 24 is fine for everything. |
 | `TZ` | `UTC` | **Timezone — this one matters for stealth.** Bot detectors compare your browser's timezone against your IP's geographic location. If your IP says you're in Romania but your timezone says UTC, that's a red flag. Set this to match your IP: `Europe/Bucharest`, `America/New_York`, `Asia/Tokyo`, etc. |
 | `LANG` | `en_US.UTF-8` | Browser locale/language. |

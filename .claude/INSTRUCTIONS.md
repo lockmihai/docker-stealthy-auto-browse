@@ -44,7 +44,7 @@ docker stop stealthy-browser
 
 5. **Use wait conditions instead of sleep** — `wait_for_element`, `wait_for_text`, `wait_for_url` wait for actual page state, not arbitrary time. Much more reliable.
 
-6. **Handle dialogs proactively** — Call `handle_dialog` BEFORE triggering any action that opens an alert/confirm/prompt, or the page will hang forever waiting for the dialog to be dismissed.
+6. **Handle dialogs proactively** — Call `handle_dialog` BEFORE triggering any action that opens an alert/confirm/prompt if you need to dismiss it or provide prompt text. Dialogs are auto-accepted (clicks OK) if you don't configure them.
 
 7. **Call `calibrate` after fullscreen changes** — Entering/exiting fullscreen shifts the coordinate mapping between viewport and screen. Recalibrate so `system_click` hits the right spot.
 
@@ -103,7 +103,8 @@ Every response has this shape:
 - Returns: `{"url": "...", "title": "..."}`
 - If a page loader matches the URL, the loader runs instead and the response includes `"loader": "name"`.
 
-**back / forward / refresh** — Standard browser navigation. No parameters.
+**back / forward / refresh** — Standard browser navigation. Optional `wait_until` (same as `goto`).
+- Returns: `{"url": "...", "title": "..."}`
 
 ---
 
@@ -227,8 +228,8 @@ Resize parameters (all optional):
 {
   "count": 3,
   "elements": [
-    {"tag": "button", "text": "Submit", "selector": "#submit", "x": 400, "y": 250, "w": 120, "h": 40, "visible": true},
-    {"tag": "input", "text": "", "selector": "input[name='email']", "x": 300, "y": 180, "w": 250, "h": 35, "visible": true}
+    {"i": 0, "tag": "button", "id": "submit", "text": "Submit", "selector": "#submit", "x": 400, "y": 250, "w": 120, "h": 40, "visible": true},
+    {"i": 1, "tag": "input", "id": null, "text": "", "selector": "input[name='email']", "x": 300, "y": 180, "w": 250, "h": 35, "visible": true}
   ]
 }
 ```
@@ -326,7 +327,7 @@ The browser supports multiple tabs. One is "active" — all actions operate on i
 
 ### Dialog Handling
 
-**handle_dialog** — **Must call BEFORE the action that triggers the dialog.** Pre-configures how the next alert/confirm/prompt will be handled. If you don't set this up before a dialog appears, the page hangs.
+**handle_dialog** — **Call BEFORE the action that triggers the dialog** if you need to dismiss it or provide prompt text. Pre-configures how the next alert/confirm/prompt will be handled. If you don't call this, the dialog is auto-accepted (clicks OK).
 
 ```json
 {"action": "handle_dialog", "accept": true}

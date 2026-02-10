@@ -402,6 +402,18 @@ async def dispatch_action(cmd: dict) -> dict:
         await page.goto(url, wait_until=cmd.get("wait_until", "domcontentloaded"))
         return make_response(True, {"url": page.url, "title": await page.title()})
 
+    if action == "back":
+        await page.go_back(wait_until=cmd.get("wait_until", "domcontentloaded"))
+        return make_response(True, {"url": page.url, "title": await page.title()})
+
+    if action == "forward":
+        await page.go_forward(wait_until=cmd.get("wait_until", "domcontentloaded"))
+        return make_response(True, {"url": page.url, "title": await page.title()})
+
+    if action == "refresh":
+        await page.reload(wait_until=cmd.get("wait_until", "domcontentloaded"))
+        return make_response(True, {"url": page.url, "title": await page.title()})
+
     if action == "click":
         selector = cmd.get("selector", "")
         if not selector:

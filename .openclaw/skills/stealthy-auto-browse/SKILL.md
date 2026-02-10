@@ -141,13 +141,18 @@ Navigates to a URL. This is how you load pages.
 
 #### back / forward / refresh
 
-Standard browser navigation. No parameters needed.
+Standard browser navigation.
 
 ```json
 {"action": "back"}
 {"action": "forward"}
 {"action": "refresh"}
 ```
+
+**Parameters:**
+- `wait_until` (optional, default `"domcontentloaded"`): Same options as `goto`.
+
+**Response data:** `{"url": "https://example.com/previous-page", "title": "Previous Page"}`
 
 ### System Input (Undetectable)
 
@@ -347,7 +352,9 @@ Scans the page and returns every interactive element (buttons, links, inputs, se
   "count": 5,
   "elements": [
     {
+      "i": 0,
       "tag": "button",
+      "id": "submit-btn",
       "text": "Submit",
       "selector": "#submit-btn",
       "x": 400,
@@ -357,7 +364,9 @@ Scans the page and returns every interactive element (buttons, links, inputs, se
       "visible": true
     },
     {
+      "i": 1,
       "tag": "input",
+      "id": null,
       "text": "",
       "selector": "input[name='email']",
       "x": 300,
@@ -543,11 +552,11 @@ Closes a tab. After closing, the last remaining tab becomes active.
 
 ### Dialog Handling
 
-Browsers have modal dialogs (alert, confirm, prompt) that block the page until dismissed. You must handle these proactively.
+Browsers have modal dialogs (alert, confirm, prompt). By default, dialogs are auto-accepted (clicks OK). Use `handle_dialog` if you need to dismiss a dialog or provide text for a prompt.
 
 #### handle_dialog
 
-**Must be called BEFORE the action that triggers the dialog.** This pre-configures how the next dialog will be handled. If you don't call this before a dialog appears, the page will hang.
+**Call BEFORE the action that triggers the dialog** if you want to dismiss it or provide prompt text. If you don't call this, the dialog is auto-accepted (clicks OK).
 
 ```json
 {"action": "handle_dialog", "accept": true}
@@ -1043,7 +1052,7 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
   "data": {
     "loader": "News Site Cleanup",
     "steps_executed": 6,
-    "last_result": { "slept": 1 }
+    "last_result": { "success": true, "timestamp": 1234567890.456, "data": { "slept": 1 } }
   }
 }
 ```
@@ -1112,6 +1121,6 @@ curl -s -X POST $API -H 'Content-Type: application/json' \
 5. **Resize screenshots with `?whLargest=512`** — full resolution is unnecessarily large
 6. **Mount `/userdata`** for persistent sessions — cookies, fingerprint, and profile survive restarts
 7. **Use wait conditions instead of `sleep`** — `wait_for_element`, `wait_for_text`, `wait_for_url`
-8. **Call `handle_dialog` BEFORE the action that triggers it** — or the page hangs
+8. **Call `handle_dialog` BEFORE the action that triggers it** — if you need to dismiss or provide prompt text (dialogs are auto-accepted otherwise)
 9. **Call `calibrate` after fullscreen changes** — coordinate mapping shifts
 10. **Add slight delays between actions for realism** — `sleep` with 0.5-1.5s between clicks looks more human
