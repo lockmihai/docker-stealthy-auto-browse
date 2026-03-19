@@ -1,8 +1,12 @@
 .git
 .github
 .gitignore
+.dockerignore
 .research_files
 .browser_profile
+.skills
+.openclaw
+.git-update.sh
 brave-profile
 app/profile
 app/__pycache__
@@ -14,3 +18,4 @@ Makefile
 .fixtures
 tests
 test.sh
+screenshot.png

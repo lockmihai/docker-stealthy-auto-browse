@@ -1,0 +1,188 @@
+# Example script showcasing all script mode features.
+#
+# Run:
+#   cat scripts/example_script.yaml | docker run --rm -i \
+#     -e TARGET_URL=https://example.com \
+#     -v ./output:/output \
+#     psyb0t/stealthy-auto-browse --script > results.json
+
+name: Full Example Script
+
+# "stop" (default) halts on first error, "continue" keeps going
+on_error: stop
+
+steps:
+  # --- Environment variable substitution ---
+  # ${env.VAR_NAME} is replaced with the env var value
+  - action: goto
+    url: ${env.TARGET_URL}
+    wait_until: networkidle
+
+  # --- Timing ---
+  - action: sleep
+    duration: 1
+
+  # --- Wait conditions ---
+  - action: wait_for_element
+    selector: body
+    state: visible
+    timeout: 10
+
+  - action: wait_for_network_idle
+    timeout: 10
+
+  # --- Page inspection with output_id ---
+  # Any step with output_id collects its result into the "outputs" dict
+  - action: get_text
+    output_id: page_text
+
+  - action: get_html
+    output_id: page_html
+
+  - action: eval
+    expression: "document.title"
+    output_id: title
+
+  - action: eval
+    expression: |
+      (() => {
+        const links = Array.from(document.querySelectorAll('a'));
+        return links.map(a => ({ text: a.textContent.trim(), href: a.href }));
+      })()
+    output_id: all_links
+
+  - action: get_interactive_elements
+    output_id: elements
+
+  # --- Screenshots ---
+  # Browser viewport screenshot, base64 in outputs
+  - action: save_screenshot
+    output_id: browser_screenshot
+
+  # Desktop screenshot (includes browser chrome)
+  - action: save_screenshot
+    type: desktop
+    output_id: desktop_screenshot
+
+  # Resized screenshot
+  - action: save_screenshot
+    output_id: thumbnail
+    whLargest: 400
+
+  # Also write to disk (path + output_id work together)
+  - action: save_screenshot
+    path: /output/page.png
+    output_id: saved_screenshot
+
+  # --- Playwright input (DOM-level) ---
+  # These use CSS selectors or xpath= prefix
+  # - action: click
+  #   selector: "#some-button"
+  # - action: fill
+  #   selector: "#search-input"
+  #   value: "search query"
+  # - action: type
+  #   selector: "#search-input"
+  #   text: "typed text"
+  #   delay: 0.05
+
+  # --- System input (OS-level, undetectable) ---
+  # - action: system_click
+  #   x: 500
+  #   y: 300
+  # - action: mouse_move
+  #   x: 500
+  #   y: 300
+  #   duration: 0.5
+  # - action: mouse_click
+  #   x: 500
+  #   y: 300
+  # - action: system_type
+  #   text: "hello world"
+  #   interval: 0.08
+  # - action: send_key
+  #   key: enter
+  # - action: scroll
+  #   amount: -3
+
+  # --- Scrolling ---
+  # - action: scroll_to_bottom
+  #   delay: 0.4
+  # - action: scroll_to_bottom_humanized
+  #   min_clicks: 2
+  #   max_clicks: 6
+  #   delay: 0.5
+
+  # --- Tab management ---
+  - action: list_tabs
+    output_id: tabs
+
+  # - action: new_tab
+  #   url: https://example.com
+  # - action: switch_tab
+  #   index: 0
+  # - action: close_tab
+  #   index: 1
+
+  # --- Cookies ---
+  - action: get_cookies
+    output_id: cookies
+
+  # - action: set_cookie
+  #   name: my_cookie
+  #   value: my_value
+  #   url: https://example.com
+  # - action: delete_cookies
+
+  # --- Storage ---
+  # - action: get_storage
+  #   type: local
+  #   output_id: local_storage
+  # - action: set_storage
+  #   type: local
+  #   key: my_key
+  #   value: my_value
+  # - action: clear_storage
+  #   type: local
+
+  # --- Network logging ---
+  # - action: enable_network_log
+  # - action: goto
+  #   url: https://example.com
+  # - action: get_network_log
+  #   output_id: network_log
+  # - action: clear_network_log
+  # - action: disable_network_log
+
+  # --- Dialogs ---
+  # Pre-configure dialog handling BEFORE the action that triggers it
+  # - action: handle_dialog
+  #   accept: true
+  #   text: "prompt response"
+  # - action: get_last_dialog
+  #   output_id: dialog_info
+
+  # --- Display ---
+  - action: get_resolution
+    output_id: resolution
+
+  # - action: calibrate
+  # - action: enter_fullscreen
+  # - action: exit_fullscreen
+
+  # --- Downloads ---
+  # - action: get_last_download
+  #   output_id: download
+
+  # --- File upload ---
+  # - action: upload_file
+  #   selector: "#file-input"
+  #   file_path: /path/to/file.txt
+
+  # --- Navigation ---
+  # - action: refresh
+  #   wait_until: domcontentloaded
+
+  # --- Utility ---
+  - action: ping
+    output_id: ping

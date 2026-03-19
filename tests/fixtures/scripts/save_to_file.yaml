@@ -1,0 +1,9 @@
+name: Save To File Test
+on_error: stop
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: save_screenshot
+    path: /tmp/test_screenshot.png
+    output_id: screenshot

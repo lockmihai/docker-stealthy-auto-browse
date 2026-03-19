@@ -3,17 +3,40 @@
 PIDS=()
 
 cleanup() {
-    echo ""
-    echo "[*] Shutting down..."
+    echo "" >&2
+    echo "[*] Shutting down..." >&2
     for pid in "${PIDS[@]}"; do
         kill "$pid" 2>/dev/null
     done
     wait
-    echo "[*] Done."
-    exit 0
+    echo "[*] Done." >&2
+    exit "${EXIT_CODE:-0}"
 }
 
 trap cleanup SIGINT SIGTERM SIGHUP EXIT
+
+# Detect script mode early - before anything prints to stdout
+SCRIPT_MODE=false
+for arg in "$@"; do
+    if [ "$arg" = "--script" ]; then
+        SCRIPT_MODE=true
+        break
+    fi
+done
+
+# --script reads YAML from stdin, save to temp file before
+# background processes consume stdin
+if [ "$SCRIPT_MODE" = "true" ]; then
+    _STDIN_FILE=$(mktemp /tmp/script-stdin-XXXXXX.yaml)
+    cat > "$_STDIN_FILE"
+    set -- --script "$_STDIN_FILE"
+fi
+
+# In script mode, save real stdout for main.py, redirect shell stdout to stderr
+# so VNC/websockify noise doesn't pollute the JSON output
+if [ "$SCRIPT_MODE" = "true" ]; then
+    exec 3>&1 1>&2
+fi
 
 # Start Xvfb (Full HD max, can resize down via API)
 if [ -z "$DISPLAY" ] || [ "$DISPLAY" = ":99" ]; then
@@ -49,31 +72,38 @@ websockify --web /usr/share/novnc 5900 localhost:5901 &
 PIDS+=($!)
 sleep 0.3
 
-# Start session API
-python main.py "$@" &
+# Start session (restore real stdout for main.py in script mode)
+if [ "$SCRIPT_MODE" = "true" ]; then
+    python main.py "$@" 1>&3 &
+else
+    python main.py "$@" &
+fi
 SESSION_PID=$!
 PIDS+=($SESSION_PID)
 
-# Wait for API to be ready
-for i in {1..30}; do
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-        break
-    fi
-    sleep 0.2
-done
+if [ "$SCRIPT_MODE" = "false" ]; then
+    # Wait for API to be ready
+    for i in {1..30}; do
+        if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+            break
+        fi
+        sleep 0.2
+    done
 
-# Banner
-echo ""
-echo "=============================================="
-echo "  STEALTHY AUTO-BROWSE"
-echo "=============================================="
-echo ""
-echo "  VNC:  http://localhost:5900/"
-echo "  API:  http://localhost:8080"
-echo ""
-echo "  Ctrl+C to exit"
-echo "=============================================="
-echo ""
+    # Banner
+    echo ""
+    echo "=============================================="
+    echo "  STEALTHY AUTO-BROWSE"
+    echo "=============================================="
+    echo ""
+    echo "  VNC:  http://localhost:5900/"
+    echo "  API:  http://localhost:8080"
+    echo ""
+    echo "  Ctrl+C to exit"
+    echo "=============================================="
+    echo ""
+fi
 
-# Wait for main.py to exit
+# Wait for main.py to exit and preserve its exit code
 wait $SESSION_PID
+EXIT_CODE=$?

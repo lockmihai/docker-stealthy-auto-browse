@@ -894,6 +894,24 @@ Shuts down the browser. The container will stop after this.
 
 **Response data:** `{"message": "closing"}`
 
+#### save_screenshot
+
+Captures a screenshot. Works in both API and script mode. In script mode with `output_id`, the screenshot is base64-encoded in the outputs dict.
+
+```json
+{"action": "save_screenshot"}
+{"action": "save_screenshot", "type": "desktop"}
+{"action": "save_screenshot", "path": "/output/page.png", "whLargest": 512}
+```
+
+**Parameters:**
+- `type` (optional, default `"browser"`): `"browser"` for viewport, `"desktop"` for full virtual desktop.
+- `path` (optional): File path to write the PNG inside the container.
+- `output_id` (optional, script mode): Key to collect base64 screenshot in the outputs dict.
+- `width`, `height`, `whLargest` (optional): Resize the screenshot before saving/encoding.
+
+**Response data:** `{"type": "browser", "size": 57026}` (plus `"path"` if specified)
+
 ### State Endpoints (GET)
 
 #### GET /state
@@ -938,8 +956,8 @@ docker run -d -p 8080:8080 -e PROXY_URL=http://user:pass@proxy:8888 psyb0t/steal
 # Persistent browser profile — cookies, sessions, and fingerprint survive container restarts
 docker run -d -p 8080:8080 -v ./profile:/userdata psyb0t/stealthy-auto-browse
 
-# Open a URL automatically on startup
-docker run -d -p 8080:8080 psyb0t/stealthy-auto-browse https://example.com
+# Run a YAML script and exit (no HTTP server)
+cat script.yaml | docker run --rm -i psyb0t/stealthy-auto-browse --script > results.json
 ```
 
 ## Page Loaders (URL-Triggered Automation)
@@ -1055,6 +1073,70 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
   }
 }
 ```
+
+## Script Mode (Run & Exit)
+
+Instead of running the HTTP API server, you can pass a YAML script at startup. The container executes the steps, prints results as JSON to stdout, and exits. No HTTP server, no long-running process.
+
+### Usage
+
+```bash
+# Pipe a script in, get JSON results out
+cat my-script.yaml | docker run --rm -i \
+  psyb0t/stealthy-auto-browse --script > results.json
+
+# Parameterize with environment variables
+cat my-script.yaml | docker run --rm -i \
+  -e TARGET_URL=https://example.com \
+  psyb0t/stealthy-auto-browse --script
+```
+
+### Script Format
+
+```yaml
+name: Scrape Example
+on_error: stop    # "stop" (default) or "continue"
+steps:
+  - action: goto
+    url: ${env.TARGET_URL}
+    wait_until: networkidle
+  - action: save_screenshot
+    output_id: screenshot
+  - action: get_text
+    output_id: page_text
+  - action: eval
+    expression: "document.title"
+    output_id: title
+```
+
+### Output
+
+```json
+{
+  "name": "Scrape Example",
+  "success": true,
+  "steps_executed": 4,
+  "steps_total": 4,
+  "duration": 3.42,
+  "step_results": [ ... ],
+  "outputs": {
+    "screenshot": "data:image/png;base64,iVBOR...",
+    "page_text": { "text": "...", "length": 1234 },
+    "title": { "result": "Example Domain" }
+  }
+}
+```
+
+### Key Details
+
+- **`output_id`** on any step collects its result into the `outputs` dict. Screenshots become base64 data URIs. Everything else is the step's `data` dict as-is.
+- **`${env.VAR_NAME}`** in any string value is replaced with the environment variable.
+- **`save_screenshot`** captures the viewport (or `type: desktop` for full desktop). Supports `width`/`height`/`whLargest` resize. Can also write to disk with `path`.
+- **`on_error: stop`** (default) halts on first failure. **`on_error: continue`** keeps going.
+- **All HTTP API actions** work as script steps.
+- **Page loaders** still fire on `goto` if configured.
+- **Logs go to stderr**, stdout is clean JSON.
+- **Exit code** 0 on success, 1 on failure.
 
 ## Pre-installed Extensions
 

@@ -1,0 +1,86 @@
+name: Multi Action Test
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+
+  # Wait conditions
+  - action: wait_for_element
+    selector: "#submit-btn"
+    state: visible
+    timeout: 5
+
+  - action: wait_for_text
+    text: Submit
+    timeout: 5
+
+  - action: wait_for_network_idle
+    timeout: 5
+
+  # Tabs
+  - action: list_tabs
+    output_id: tabs
+
+  # Cookies
+  - action: set_cookie
+    name: test_cookie
+    value: test_value
+    url: ${env.TEST_URL}
+
+  - action: get_cookies
+    output_id: cookies
+
+  - action: delete_cookies
+
+  # Storage
+  - action: eval
+    expression: "localStorage.setItem('test_key', 'test_val'); 'ok'"
+
+  - action: get_storage
+    type: local
+    output_id: storage
+
+  - action: clear_storage
+    type: local
+
+  # Network log
+  - action: enable_network_log
+
+  - action: eval
+    expression: "fetch(window.location.href).then(() => 'fetched')"
+
+  - action: sleep
+    duration: 0.5
+
+  - action: get_network_log
+    output_id: network
+
+  - action: clear_network_log
+  - action: disable_network_log
+
+  # Display
+  - action: get_resolution
+    output_id: resolution
+
+  - action: calibrate
+    output_id: calibration
+
+  # Inspection
+  - action: get_interactive_elements
+    output_id: elements
+
+  - action: get_html
+    output_id: html
+
+  # Playwright input
+  - action: fill
+    selector: "#name-input"
+    value: "test name"
+
+  - action: eval
+    expression: "document.getElementById('name-input').value"
+    output_id: filled_value
+
+  # Utility
+  - action: ping
+    output_id: ping

@@ -1,0 +1,8 @@
+name: Loaders Work In Script Mode
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: eval
+    expression: "document.getElementById('loader-marker').textContent"
+    output_id: marker

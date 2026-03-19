@@ -1,0 +1,11 @@
+name: Error Stop Test
+on_error: stop
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: eval
+    expression: "throw new Error('intentional')"
+  - action: eval
+    expression: "document.title"
+    output_id: should_not_run

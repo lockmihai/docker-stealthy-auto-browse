@@ -28,10 +28,11 @@ from typing import Any
 
 from aiohttp import web
 from browser import Browser, BrowserConfig
+from loaders import find_loader, load_loaders, substitute_url
 from PIL import Image
 from system import System
 
-from loaders import find_loader, load_loaders, substitute_url
+from script_runner import load_script, run_script
 
 # =============================================================================
 # CONTENT TYPES
@@ -45,12 +46,16 @@ CONTENT_TYPE_TEXT_PLAIN = "text/plain"
 # =============================================================================
 
 
+_log_to_stderr = False
+
+
 def _ts() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
 def log(msg: str) -> None:
-    print(f"[{_ts()}] {msg}", flush=True)
+    dest = sys.stderr if _log_to_stderr else sys.stdout
+    print(f"[{_ts()}] {msg}", flush=True, file=dest)
 
 
 def log_request(action: str, params: dict | None = None) -> None:
@@ -104,7 +109,13 @@ _network_logging: bool = False
 _network_handler_pages: set[int] = set()
 
 PORT = 8080
-URL = sys.argv[1] if len(sys.argv) > 1 else None
+
+# Parse CLI args: --script <path> (path provided by entrypoint from stdin)
+SCRIPT_PATH: str | None = None
+
+_args = sys.argv[1:]
+if len(_args) >= 2 and _args[0] == "--script":
+    SCRIPT_PATH = _args[1]
 
 
 async def _on_dialog(dialog: Any) -> None:
@@ -380,6 +391,74 @@ async def dispatch_action(cmd: dict) -> dict:
     if action == "clear_network_log":
         _network_log.clear()
         return make_response(True, {"cleared": True})
+
+    # --- Save screenshot to file (script mode) ---
+
+    if action == "save_screenshot":
+        ss_type = cmd.get("type", "browser")
+
+        if ss_type == "desktop":
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp_path = tmp.name
+            result = subprocess.run(
+                ["scrot", "-o", tmp_path],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                os.unlink(tmp_path)
+                return make_response(False, error=f"scrot failed: {result.stderr}")
+            with open(tmp_path, "rb") as f:
+                data = f.read()
+            os.unlink(tmp_path)
+        else:
+            page = get_active_page()
+            if not page:
+                return make_response(False, error="No active page")
+            data = await page.screenshot(type="png")
+
+        # Optional resize
+        w = cmd.get("width")
+        h = cmd.get("height")
+        largest = cmd.get("whLargest")
+        if w or h or largest:
+            img = Image.open(io.BytesIO(data))
+            orig_w, orig_h = img.size
+            if largest:
+                largest = int(largest)
+                if orig_w >= orig_h:
+                    new_w = largest
+                    new_h = int(orig_h * largest / orig_w)
+                else:
+                    new_h = largest
+                    new_w = int(orig_w * largest / orig_h)
+            elif w and h:
+                new_w, new_h = int(w), int(h)
+            elif w:
+                new_w = int(w)
+                new_h = int(orig_h * new_w / orig_w)
+            else:
+                new_h = int(h)
+                new_w = int(orig_w * new_h / orig_h)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            data = buf.getvalue()
+
+        # Write to file if path given
+        path = cmd.get("path", "")
+        if path:
+            parent = os.path.dirname(os.path.abspath(path))
+            os.makedirs(parent, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+
+        resp = make_response(True, {"type": ss_type, "size": len(data)})
+        if path:
+            resp["data"]["path"] = path
+        # Attach binary for script runner to base64-encode
+        resp["_binary"] = data
+        return resp
 
     # All other actions need a page
     page = get_active_page()
@@ -665,6 +744,7 @@ async def execute_loader(loader, url: str) -> dict:
             step = {**step, "_from_loader": True}
         log(f"  [{loader.name}] {step.get('action', '?')}")
         result = await dispatch_action(step)
+        result.pop("_binary", None)
         results.append(result)
         if not result.get("success", True):
             log(f"  [{loader.name}] Step failed: {result.get('error')}")
@@ -698,6 +778,7 @@ async def handle_command(request: web.Request) -> web.Response:
 
     try:
         result = await dispatch_action(cmd)
+        result.pop("_binary", None)
         return web.json_response(result)
     except Exception as e:
         return web.json_response(make_response(False, error=str(e)))
@@ -815,10 +896,54 @@ async def run_server(app: web.Application) -> None:
     await runner.cleanup()
 
 
+async def _run_script_mode(script_path: str, config: BrowserConfig) -> None:
+    """Run a YAML script and exit."""
+    global _log_to_stderr, browser, loaders_dir
+    _log_to_stderr = True
+
+    # Capture real stdout for JSON output, redirect default stdout
+    # to stderr so library warnings (Xlib etc) don't pollute JSON
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
+    # Still load loaders so goto steps can trigger them
+    loaders_dir = os.environ.get("LOADERS_DIR", "/loaders")
+
+    try:
+        script_data = load_script(script_path)
+    except Exception as e:
+        log(f"Failed to load script: {e}")
+        sys.exit(1)
+
+    log("Starting browser (script mode)")
+
+    async with Browser(config) as b:
+        browser = b
+        await browser._get_page()
+
+        system.init()
+        log("PyAutoGUI ready")
+
+        await asyncio.sleep(1)
+        page = get_active_page()
+        if page:
+            _setup_page_handlers(page)
+            system.window_offset = await get_window_offset_js(page)
+        log(f"Window offset: {system.window_offset}")
+        log("Browser ready")
+
+        result = await run_script(script_data, dispatch_action, real_stdout)
+        sys.exit(0 if result["success"] else 1)
+
+
 async def main() -> None:
     global browser, loaders_dir
 
     config = BrowserConfig()
+
+    if SCRIPT_PATH:
+        await _run_script_mode(SCRIPT_PATH, config)
+        return
 
     # Set loaders directory
     loaders_dir = os.environ.get("LOADERS_DIR", "/loaders")
@@ -838,11 +963,7 @@ async def main() -> None:
 
     async with Browser(config) as b:
         browser = b
-        if URL:
-            log(f"Opening {URL}")
-            await browser.goto(URL, wait_until="domcontentloaded")
-        else:
-            await browser._get_page()
+        await browser._get_page()
 
         system.init()
         log("PyAutoGUI ready")

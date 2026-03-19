@@ -1,0 +1,17 @@
+name: Screenshot Resize Test
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: save_screenshot
+    output_id: full
+  - action: save_screenshot
+    output_id: resized_largest
+    whLargest: 200
+  - action: save_screenshot
+    output_id: resized_width
+    width: 300
+  - action: save_screenshot
+    output_id: resized_both
+    width: 200
+    height: 100

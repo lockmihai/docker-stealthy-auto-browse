@@ -1,0 +1,7 @@
+name: No Outputs Test
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: sleep
+    duration: 0.2

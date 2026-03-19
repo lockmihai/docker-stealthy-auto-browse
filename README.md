@@ -14,6 +14,7 @@ Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and every other bot detector
 - [HTTP API](#http-api)
 - [Actions Reference](#actions-reference)
 - [Screenshots](#screenshots)
+- [Script Mode (Run & Exit)](#script-mode-run--exit)
 - [Page Loaders (URL-Triggered Automation)](#page-loaders-url-triggered-automation)
 - [Environment Variables](#environment-variables)
 - [Persistent Profiles](#persistent-profiles)
@@ -98,11 +99,6 @@ curl -X POST http://localhost:8080 \
 **Take a screenshot:**
 ```bash
 curl http://localhost:8080/screenshot/browser?whLargest=512 -o screenshot.png
-```
-
-**Open a URL on startup:**
-```bash
-docker run -d -p 8080:8080 psyb0t/stealthy-auto-browse https://example.com
 ```
 
 **Watch the browser live** at `http://localhost:5900/` (noVNC auto-connects).
@@ -340,6 +336,7 @@ Record all HTTP requests and responses the page makes. Useful for finding API en
 | `ping` | — | Health check that returns `"pong"` and the current page URL. |
 | `sleep` | `duration` | Pauses for N seconds. Prefer `wait_for_element` or `wait_for_text` when waiting for page content. |
 | `close` | — | Shuts down the browser. The container stops after this. |
+| `save_screenshot` | `output_id`, `path`, `type`, `width`, `height`, `whLargest` | Captures a screenshot. `type`: `"browser"` (default) or `"desktop"`. Optional `path` to also write PNG to disk. In script mode, `output_id` collects the base64 PNG into the outputs dict. Supports resize via `width`/`height`/`whLargest`. |
 
 ## Screenshots
 
@@ -479,6 +476,102 @@ Now when you `goto` any URL on `news-site.com`, all of this happens automaticall
   }
 }
 ```
+
+## Script Mode (Run & Exit)
+
+Run a YAML script at container startup — execute the steps, get results as JSON on stdout, and the container exits. No HTTP server, no long-running process. Good for CI, cron jobs, one-shot scraping, or anything where you want to automate a sequence and get the output.
+
+### Usage
+
+```bash
+# Pipe a script in, get JSON results out
+cat my-script.yaml | docker run --rm -i \
+  psyb0t/stealthy-auto-browse --script > results.json
+
+# Parameterize with environment variables
+cat my-script.yaml | docker run --rm -i \
+  -e TARGET_URL=https://example.com \
+  psyb0t/stealthy-auto-browse --script
+```
+
+### Script Format
+
+```yaml
+name: Scrape Example
+on_error: stop    # "stop" (default) or "continue"
+steps:
+  - action: goto
+    url: ${env.TARGET_URL}
+    wait_until: networkidle
+
+  - action: sleep
+    duration: 2
+
+  - action: save_screenshot
+    output_id: page_screenshot
+
+  - action: get_text
+    output_id: page_text
+
+  - action: eval
+    expression: "document.title"
+    output_id: title
+```
+
+### Output
+
+The JSON printed to stdout looks like this:
+
+```json
+{
+  "name": "Scrape Example",
+  "success": true,
+  "steps_executed": 5,
+  "steps_total": 5,
+  "duration": 3.42,
+  "step_results": [ ... ],
+  "outputs": {
+    "page_screenshot": "data:image/png;base64,iVBOR...",
+    "page_text": { "text": "...", "length": 1234 },
+    "title": { "result": "Example Domain" }
+  }
+}
+```
+
+- **`outputs`** contains only steps that have an `output_id`. Screenshots are base64-encoded PNGs with a data URI prefix. Everything else is the step's `data` dict as-is.
+- **`step_results`** is the full execution log of every step (action, duration, success/error).
+- **Logs go to stderr**, so `> results.json` gives you clean JSON.
+- **Exit code** is 0 if all steps succeed, 1 if any fail.
+
+### Key Features
+
+- **`output_id`** on any step collects its result into the `outputs` dict. This is how you get data out.
+- **`${env.VAR_NAME}`** in any string value is replaced with the environment variable. Pass `-e VAR=value` to Docker.
+- **`save_screenshot`** captures the browser viewport (or full desktop with `type: desktop`). Supports `width`, `height`, `whLargest` for resize. Can also write to disk with `path: /output/file.png` (in addition to `output_id`).
+- **`on_error: continue`** keeps going past failures. **`on_error: stop`** (default) halts on the first error.
+- **All HTTP API actions work as script steps** — goto, click, fill, eval, wait_for_element, etc.
+- **Page loaders still fire** on `goto` if configured.
+
+### Example: Screenshot a URL
+
+```yaml
+name: Quick Screenshot
+steps:
+  - action: goto
+    url: ${env.URL}
+    wait_until: networkidle
+  - action: save_screenshot
+    output_id: screenshot
+    whLargest: 1024
+```
+
+```bash
+cat screenshot.yaml | docker run --rm -i -e URL=https://example.com \
+  psyb0t/stealthy-auto-browse --script | \
+  python3 -c "import sys,json,base64; d=json.load(sys.stdin); open('out.png','wb').write(base64.b64decode(d['outputs']['screenshot'].split(',')[1]))"
+```
+
+See `scripts/example_script.yaml` for a full example.
 
 ## Environment Variables
 

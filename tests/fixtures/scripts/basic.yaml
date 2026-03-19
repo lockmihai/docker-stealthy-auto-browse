@@ -1,0 +1,15 @@
+name: Basic Script Test
+on_error: stop
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: sleep
+    duration: 0.5
+  - action: save_screenshot
+    output_id: screenshot
+  - action: get_text
+    output_id: page_text
+  - action: eval
+    expression: "document.title"
+    output_id: title

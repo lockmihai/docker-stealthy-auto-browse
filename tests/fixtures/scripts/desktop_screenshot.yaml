@@ -1,0 +1,8 @@
+name: Desktop Screenshot Test
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: save_screenshot
+    type: desktop
+    output_id: desktop
