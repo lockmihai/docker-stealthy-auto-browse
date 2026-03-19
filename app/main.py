@@ -108,7 +108,8 @@ _network_log: list[dict] = []
 _network_logging: bool = False
 _network_handler_pages: set[int] = set()
 
-PORT = 8080
+HTTP_LISTEN_HOST = os.environ.get("HTTP_LISTEN_HOST", "0.0.0.0")
+HTTP_LISTEN_PORT = int(os.environ.get("HTTP_LISTEN_PORT", "8080"))
 
 # Parse CLI args: --script <path> (path provided by entrypoint from stdin)
 SCRIPT_PATH: str | None = None
@@ -889,9 +890,9 @@ async def run_server(app: web.Application) -> None:
     """Run the HTTP server."""
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    site = web.TCPSite(runner, HTTP_LISTEN_HOST, HTTP_LISTEN_PORT)
     await site.start()
-    log(f"API listening on port {PORT}")
+    log(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
 
     # Keep running until browser closes
     while browser and browser._context and browser._context.pages:

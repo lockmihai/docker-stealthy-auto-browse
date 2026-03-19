@@ -62,13 +62,18 @@ if [ -z "$DISPLAY" ] || [ "$DISPLAY" = ":99" ]; then
     fi
 fi
 
+VNC_LISTEN_HOST="${VNC_LISTEN_HOST:-0.0.0.0}"
+VNC_LISTEN_PORT="${VNC_LISTEN_PORT:-5900}"
+HTTP_LISTEN_HOST="${HTTP_LISTEN_HOST:-0.0.0.0}"
+HTTP_LISTEN_PORT="${HTTP_LISTEN_PORT:-8080}"
+
 # Start x11vnc
-x11vnc -display :99 -rfbport 5901 -nopw -forever -shared -localhost &
+x11vnc -display :99 -rfbport 5901 -nopw -forever -shared -listen "$VNC_LISTEN_HOST" &
 PIDS+=($!)
 sleep 0.3
 
-# Start noVNC
-websockify --web /usr/share/novnc 5900 localhost:5901 &
+# Start noVNC (websockify)
+websockify --web /usr/share/novnc "$VNC_LISTEN_HOST:$VNC_LISTEN_PORT" localhost:5901 &
 PIDS+=($!)
 sleep 0.3
 
@@ -84,7 +89,7 @@ PIDS+=($SESSION_PID)
 if [ "$SCRIPT_MODE" = "false" ]; then
     # Wait for API to be ready
     for i in {1..30}; do
-        if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+        if curl -s "http://localhost:${HTTP_LISTEN_PORT}/health" > /dev/null 2>&1; then
             break
         fi
         sleep 0.2
@@ -96,8 +101,8 @@ if [ "$SCRIPT_MODE" = "false" ]; then
     echo "  STEALTHY AUTO-BROWSE"
     echo "=============================================="
     echo ""
-    echo "  VNC:  http://localhost:5900/"
-    echo "  API:  http://localhost:8080"
+    echo "  VNC:  http://${VNC_LISTEN_HOST}:${VNC_LISTEN_PORT}/"
+    echo "  API:  http://${HTTP_LISTEN_HOST}:${HTTP_LISTEN_PORT}"
     echo ""
     echo "  Ctrl+C to exit"
     echo "=============================================="
