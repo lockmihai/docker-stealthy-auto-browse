@@ -217,7 +217,7 @@ All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
 
 | Action | Parameters | What It Does |
 |--------|------------|-------------|
-| `goto` | `url`, `wait_until` | Navigate to a URL. `wait_until` controls when the page is considered loaded: `"domcontentloaded"` (default, fast), `"load"` (all resources), `"networkidle"` (no network activity for 500ms). |
+| `goto` | `url`, `wait_until`, `referer` | Navigate to a URL. `wait_until`: `"domcontentloaded"` (default), `"load"`, `"networkidle"`. `referer`: set the HTTP Referer header (useful for sites that check referrer). |
 | `refresh` | `wait_until` (optional) | Reload the current page. Returns URL and title. |
 
 ### System Input (OS-Level, Undetectable)

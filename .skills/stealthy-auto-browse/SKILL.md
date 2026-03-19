@@ -129,11 +129,13 @@ Navigates to a URL. This is how you load pages.
 ```json
 {"action": "goto", "url": "https://example.com"}
 {"action": "goto", "url": "https://example.com", "wait_until": "networkidle"}
+{"action": "goto", "url": "https://example.com", "referer": "https://google.com/search?q=stuff"}
 ```
 
 **Parameters:**
 - `url` (required): The URL to navigate to.
 - `wait_until` (optional, default `"domcontentloaded"`): When to consider the page loaded. Options: `"domcontentloaded"` (DOM parsed, fast), `"load"` (all resources loaded), `"networkidle"` (no network activity for 500ms, slowest but most complete).
+- `referer` (optional): Set the HTTP Referer header for this navigation. Useful for sites that check the referrer and block direct access.
 
 **Response data:** `{"url": "https://example.com/", "title": "Example Domain"}`
 

@@ -478,7 +478,12 @@ async def dispatch_action(cmd: dict) -> dict:
                 log(f"Loader matched: {loader.name}")
                 return await execute_loader(loader, url)
 
-        await page.goto(url, wait_until=cmd.get("wait_until", "domcontentloaded"))
+        goto_kwargs: dict[str, Any] = {
+            "wait_until": cmd.get("wait_until", "domcontentloaded"),
+        }
+        if cmd.get("referer"):
+            goto_kwargs["referer"] = cmd["referer"]
+        await page.goto(url, **goto_kwargs)
         return make_response(True, {"url": page.url, "title": await page.title()})
 
     if action == "refresh":

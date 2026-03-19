@@ -17,6 +17,17 @@ MIME_FALLBACK = "application/octet-stream"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # /referer — echo back the Referer header as JSON
+        if self.path == "/referer":
+            referer = self.headers.get("Referer", "")
+            body = json.dumps({"referer": referer}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         # /uploads/<name> — serve uploaded file back
         if self.path.startswith("/uploads/"):
             fname = os.path.basename(self.path)
