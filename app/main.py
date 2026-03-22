@@ -28,11 +28,11 @@ from typing import Any
 
 from aiohttp import web
 from browser import Browser, BrowserConfig
-from loaders import find_loader, load_loaders, substitute_url
 from PIL import Image
+from script_runner import load_script, run_script
 from system import System
 
-from script_runner import load_script, run_script
+from loaders import find_loader, load_loaders, substitute_url
 
 # =============================================================================
 # CONTENT TYPES
@@ -107,6 +107,11 @@ _last_download: dict | None = None
 _network_log: list[dict] = []
 _network_logging: bool = False
 _network_handler_pages: set[int] = set()
+
+# Console logging
+_console_log: list[dict] = []
+_console_logging: bool = False
+_console_handler_pages: set[int] = set()
 
 HTTP_LISTEN_HOST = os.environ.get("HTTP_LISTEN_HOST", "0.0.0.0")
 HTTP_LISTEN_PORT = int(os.environ.get("HTTP_LISTEN_PORT", "8080"))
@@ -194,6 +199,20 @@ def _on_response(response: Any) -> None:
     )
 
 
+def _on_console(message: Any) -> None:
+    """Track console messages when logging is enabled."""
+    if not _console_logging:
+        return
+    _console_log.append(
+        {
+            "type": message.type,
+            "text": message.text,
+            "location": message.location,
+            "timestamp": time.time(),
+        }
+    )
+
+
 def _setup_page_handlers(page: Any) -> None:
     """Register all event handlers on a page."""
     page.on("dialog", _on_dialog)
@@ -203,6 +222,9 @@ def _setup_page_handlers(page: Any) -> None:
         page.on("request", _on_request)
         page.on("response", _on_response)
         _network_handler_pages.add(page_id)
+    if page_id not in _console_handler_pages:
+        page.on("console", _on_console)
+        _console_handler_pages.add(page_id)
 
 
 def get_active_page() -> Any:
@@ -256,7 +278,7 @@ def make_response(
 
 async def dispatch_action(cmd: dict) -> dict:
     """Execute a single action command. Returns response dict."""
-    global _next_dialog_action, _active_page, _network_logging
+    global _next_dialog_action, _active_page, _network_logging, _console_logging
     action = cmd.get("action", "")
 
     # Actions that don't need page
@@ -392,6 +414,45 @@ async def dispatch_action(cmd: dict) -> dict:
     if action == "clear_network_log":
         _network_log.clear()
         return make_response(True, {"cleared": True})
+
+    if action == "getclear_network_log":
+        result = make_response(
+            True,
+            {"log": list(_network_log), "count": len(_network_log)},
+        )
+        _network_log.clear()
+        return result
+
+    # --- Console logging ---
+
+    if action == "enable_console_log":
+        _console_logging = True
+        page = get_active_page()
+        if page:
+            _setup_page_handlers(page)
+        return make_response(True, {"enabled": True})
+
+    if action == "disable_console_log":
+        _console_logging = False
+        return make_response(True, {"enabled": False})
+
+    if action == "get_console_log":
+        return make_response(
+            True,
+            {"log": list(_console_log), "count": len(_console_log)},
+        )
+
+    if action == "clear_console_log":
+        _console_log.clear()
+        return make_response(True, {"cleared": True})
+
+    if action == "getclear_console_log":
+        result = make_response(
+            True,
+            {"log": list(_console_log), "count": len(_console_log)},
+        )
+        _console_log.clear()
+        return result
 
     # --- Save screenshot to file (script mode) ---
 

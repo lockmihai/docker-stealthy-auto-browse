@@ -1,0 +1,19 @@
+name: Console Log Script Test
+steps:
+  - action: goto
+    url: ${env.TEST_URL}
+    wait_until: domcontentloaded
+  - action: enable_console_log
+  - action: eval
+    expression: |
+      console.log('test-log-message');
+      console.error('test-error-message');
+      console.warn('test-warn-message');
+      console.info('test-info-message');
+      console.debug('test-debug-message');
+      'done'
+  - action: sleep
+    duration: 0.3
+  - action: get_console_log
+    output_id: console
+  - action: disable_console_log

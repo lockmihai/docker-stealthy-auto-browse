@@ -229,7 +229,20 @@ Call `handle_dialog` BEFORE the action that triggers the dialog. Dialogs are aut
 {"action": "enable_network_log"}
 {"action": "get_network_log"}
 {"action": "clear_network_log"}
+{"action": "getclear_network_log"}
 {"action": "disable_network_log"}
+```
+
+### Console Logging
+
+Capture `console.log`, `console.error`, `console.warn`, etc. Each entry has `type`, `text`, `location`, `timestamp`.
+
+```json
+{"action": "enable_console_log"}
+{"action": "get_console_log"}
+{"action": "clear_console_log"}
+{"action": "getclear_console_log"}
+{"action": "disable_console_log"}
 ```
 
 ### Scrolling

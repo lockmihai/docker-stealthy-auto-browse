@@ -319,6 +319,19 @@ Record all HTTP requests and responses the page makes. Useful for finding API en
 | `disable_network_log` | —          | Stops recording. Already-captured entries remain.                                                                                |
 | `get_network_log`     | —          | Returns all captured entries with their count.                                                                                   |
 | `clear_network_log`   | —          | Deletes captured entries. Keeps logging on if it was on.                                                                         |
+| `getclear_network_log` | —         | Returns all captured entries and clears the log in one call.                                                                      |
+
+### Console Logging
+
+Capture `console.log`, `console.error`, `console.warn`, and other console output from the page. Useful for debugging page behavior or extracting data logged by scripts.
+
+| Action                | Parameters | What It Does                                                                                                              |
+| --------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `enable_console_log`  | —          | Starts capturing console messages. Each entry has: `type` (log/error/warning/info/debug/trace/table/etc), `text`, `location`, `timestamp`. |
+| `disable_console_log` | —          | Stops capturing. Already-captured entries remain.                                                                          |
+| `get_console_log`     | —          | Returns all captured entries with their count.                                                                              |
+| `clear_console_log`   | —          | Deletes captured entries. Keeps capturing on if it was on.                                                                  |
+| `getclear_console_log` | —         | Returns all captured entries and clears the log in one call.                                                                 |
 
 ### Display & Calibration
 
