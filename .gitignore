@@ -8,3 +8,6 @@ screenshot.png
 .git-update.sh
 loaders/*
 !loaders/00_example.yaml
+ANUSTIMES.md
+research_files
+reply.txt
