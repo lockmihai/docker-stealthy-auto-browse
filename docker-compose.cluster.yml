@@ -1,0 +1,60 @@
+# Stealthy Auto Browse - Load Balanced Cluster
+#
+# 10 browser instances behind HAProxy which:
+#   - Queues requests when all instances are busy (timeout: QUEUE_TIMEOUT)
+#   - Limits concurrency to MAX_CONCURRENT simultaneous requests
+#   - Sticky sessions via INSTANCEID cookie
+#   - Browsers sync cookies via Redis
+#
+# Usage:
+#   docker compose up -d                        # start everything
+#   docker compose up -d --scale browser=20     # scale up (update MAX_CONCURRENT too)
+#   docker compose logs -f queue-proxy          # watch queue
+#
+# Endpoints:
+#   :8080  - Queued + load-balanced API (main entry point)
+#   :8080/__queue/health  - Health check
+#   :8080/__queue/status  - Queue metrics
+#   :8081  - HAProxy stats dashboard
+
+services:
+  redis:
+    image: redis:7-alpine
+    networks:
+      - browse
+
+  browser:
+    image: psyb0t/stealthy-auto-browse:latest
+    scale: 10
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - REDIS_URL=redis://redis:6379
+      # - PROXY_URL=http://user:pass@host:port
+    depends_on:
+      - redis
+    networks:
+      - browse
+
+  queue-proxy:
+    image: haproxy:lts-alpine
+    user: root
+    command: >-
+      sh -c 'mkdir -p /var/run/haproxy &&
+      sed "s/\$${QUEUE_TIMEOUT}/$$QUEUE_TIMEOUT/g; s/\$${MAX_CONCURRENT}/$$MAX_CONCURRENT/g"
+      /tmp/haproxy.cfg.template > /tmp/haproxy.cfg &&
+      haproxy -f /tmp/haproxy.cfg'
+    volumes:
+      - ./haproxy.cfg.template:/tmp/haproxy.cfg.template:ro
+    environment:
+      - QUEUE_TIMEOUT=${QUEUE_TIMEOUT:-300}
+      - MAX_CONCURRENT=${MAX_CONCURRENT:-10}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      - browser
+    networks:
+      - browse
+
+networks:
+  browse:

@@ -249,12 +249,10 @@ async def get_window_offset_js(page) -> dict:
     innerHeight which are fingerprint-spoofed and give wrong offsets).
     """
     try:
-        return await page.evaluate(
-            """() => ({
+        return await page.evaluate("""() => ({
                 x: Math.round(window.mozInnerScreenX),
                 y: Math.round(window.mozInnerScreenY)
-            })"""
-        )
+            })""")
     except Exception:
         return {"x": 0, "y": 0}
 
@@ -363,29 +361,26 @@ async def dispatch_action(cmd: dict) -> dict:
         _active_page = pages[-1] if pages else None
         return make_response(True, {"closed": True, "remaining": len(pages)})
 
-    # --- Cookie management ---
+    # --- Cookie management (with optional Redis sync) ---
 
     if action == "get_cookies":
         if not browser or not browser._context:
             return make_response(False, error="No browser context")
         urls = cmd.get("urls")
-        if urls:
-            cookies = await browser._context.cookies(urls)
-        else:
-            cookies = await browser._context.cookies()
+        cookies = await browser.get_cookies_synced(urls)
         return make_response(True, {"cookies": cookies, "count": len(cookies)})
 
     if action == "set_cookie":
         if not browser or not browser._context:
             return make_response(False, error="No browser context")
         cookie = {k: v for k, v in cmd.items() if k != "action"}
-        await browser._context.add_cookies([cookie])
+        await browser.set_cookie_synced(cookie)
         return make_response(True, {"set": cookie.get("name")})
 
     if action == "delete_cookies":
         if not browser or not browser._context:
             return make_response(False, error="No browser context")
-        await browser._context.clear_cookies()
+        await browser.delete_cookies_synced()
         return make_response(True, {"cleared": True})
 
     # --- Download tracking ---
@@ -597,8 +592,7 @@ async def dispatch_action(cmd: dict) -> dict:
     if action == "scroll_to_bottom":
         delay = cmd.get("delay", 0.4)
         delay_ms = int(float(delay) * 1000)
-        await page.evaluate(
-            f"""(async () => {{
+        await page.evaluate(f"""(async () => {{
             let prev = -1;
             while (window.scrollY !== prev) {{
                 prev = window.scrollY;
@@ -606,8 +600,7 @@ async def dispatch_action(cmd: dict) -> dict:
                 await new Promise(r => setTimeout(r, {delay_ms}));
             }}
             window.scrollTo(0, 0);
-        }})()"""
-        )
+        }})()""")
         return make_response(True, {"scrolled": "bottom"})
 
     if action == "scroll_to_bottom_humanized":

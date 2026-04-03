@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>Auth Test</title></head>
+<body>
+<div id="msg">checking...</div>
+<script>
+  function getCookie(name) {
+    const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return v ? v.pop() : null;
+  }
+  const session = getCookie('ADMIN_AUTH_SESSION');
+  document.getElementById('msg').textContent = session
+    ? 'Hello Admin! session=' + session
+    : 'NOT authenticated';
+</script>
+</body>
+</html>

@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse as _urlparse
 
+try:
+    from redis_sync import RedisSync
+except ImportError:
+    RedisSync = None  # type: ignore
+
 # Path to JS files
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -126,6 +131,7 @@ class Browser:
         self._context: Any = None
         self._page: Any = None
         self._state = BrowserState()
+        self._redis_sync = RedisSync() if RedisSync else None
 
     @property
     def state(self) -> BrowserState:
@@ -147,10 +153,17 @@ class Browser:
         if self.is_running:
             return
 
+        if self._redis_sync:
+            await self._redis_sync.start()
         await self._launch_browser()
+        if self._redis_sync and self._context:
+            await self._redis_sync.set_context(self._context)
 
     async def stop(self) -> None:
         """Stop browser and cleanup."""
+        if self._redis_sync:
+            self._redis_sync.clear_context()
+
         if self._page:
             try:
                 await self._page.close()
@@ -178,6 +191,9 @@ class Browser:
             except Exception:
                 pass
             self._playwright = None
+
+        if self._redis_sync:
+            await self._redis_sync.stop()
 
         self._state = BrowserState()
 
@@ -422,6 +438,30 @@ class Browser:
             self._state.content = await self._page.inner_text("body")
         except Exception:
             pass
+
+    # --- Redis-backed state sync methods ---
+
+    async def set_cookie_synced(self, cookie: dict[str, Any]) -> None:
+        """Set a cookie with Redis sync if enabled."""
+        if self._redis_sync and self._context:
+            await self._redis_sync.set_cookie(cookie, self._context)
+        elif self._context:
+            await self._context.add_cookies([cookie])
+
+    async def get_cookies_synced(self, urls: list[str] | None = None) -> list[dict]:
+        """Get cookies with Redis sync if enabled."""
+        if self._redis_sync and self._context:
+            return await self._redis_sync.get_cookies(self._context, urls)
+        elif self._context:
+            return await self._context.cookies(urls)
+        return []
+
+    async def delete_cookies_synced(self) -> None:
+        """Delete all cookies with Redis sync if enabled."""
+        if self._redis_sync and self._context:
+            await self._redis_sync.delete_cookies(self._context)
+        elif self._context:
+            await self._context.clear_cookies()
 
     async def __aenter__(self) -> "Browser":
         """Async context manager entry."""

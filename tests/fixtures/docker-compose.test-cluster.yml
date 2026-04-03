@@ -1,0 +1,49 @@
+# Cluster test compose: 10 browsers + redis + haproxy queue-proxy + web server
+# Used by tests/test_cluster.sh — do not start manually.
+
+services:
+  redis:
+    image: redis:7-alpine
+    networks:
+      - browse
+
+  webserver:
+    image: python:3.12-slim
+    command: python /server.py 80 /srv
+    volumes:
+      - ../apps/http_server.py:/server.py:ro
+      - .:/srv:ro
+    networks:
+      - browse
+
+  browser:
+    image: psyb0t/stealthy-auto-browse:latest-test
+    scale: 10
+    environment:
+      - TZ=America/New_York
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - browse
+
+  queue-proxy:
+    image: haproxy:lts-alpine
+    user: root
+    command: >-
+      sh -c 'mkdir -p /var/run/haproxy &&
+      sed "s/\$${QUEUE_TIMEOUT}/$$QUEUE_TIMEOUT/g; s/\$${MAX_CONCURRENT}/$$MAX_CONCURRENT/g"
+      /tmp/haproxy.cfg.template > /tmp/haproxy.cfg &&
+      haproxy -f /tmp/haproxy.cfg'
+    volumes:
+      - ../../haproxy.cfg.template:/tmp/haproxy.cfg.template:ro
+    environment:
+      - QUEUE_TIMEOUT=120
+      - MAX_CONCURRENT=10
+    depends_on:
+      - browser
+    networks:
+      - browse
+
+networks:
+  browse:
