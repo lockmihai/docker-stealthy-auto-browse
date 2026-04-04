@@ -1,12 +1,34 @@
 #!/bin/bash
 # tests/test_api.sh - Basic API endpoint tests
 
+test_health() {
+    local resp
+    resp=$(curl -sf "$BASE/health")
+    assert_eq "$resp" "ok" "health: response body"
+}
+
 test_ping() {
     local resp msg
     resp=$(post '{"action": "ping"}')
     assert_success "$resp" "ping" || return 1
     msg=$(echo "$resp" | json_get "['data']['message']")
     assert_eq "$msg" "pong" "ping: message"
+}
+
+test_state() {
+    local resp status
+    resp=$(curl -sf "$BASE/state")
+    status=$(echo "$resp" | json_get "['status']")
+    assert_eq "$status" "ready" "state: status" || return 1
+    # Verify response has expected fields
+    echo "$resp" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+assert 'url' in d, 'missing url'
+assert 'title' in d, 'missing title'
+assert 'window_offset' in d, 'missing window_offset'
+" || { echo "FAIL: state: missing expected fields"; return 1; }
+    echo "OK: state (status=ready)"
 }
 
 test_goto() {
@@ -17,23 +39,32 @@ test_goto() {
     assert_eq "$title" "Test Page" "goto: page title"
 }
 
-test_get_text() {
-    local resp text
-    resp=$(post '{"action": "get_text"}')
-    assert_success "$resp" "get_text" || return 1
-    text=$(echo "$resp" | json_get "['data']['text']")
-    echo "$text" | grep -q "Submit" || { echo "FAIL: get_text: missing 'Submit' in text"; return 1; }
-    echo "OK: get_text (contains 'Submit')"
-}
+# --- Table-driven page content tests ---
+# Each case: "label|action_json|field_path|expected_substring"
+PAGE_CONTENT_CASES=(
+    'get_text|{"action": "get_text"}|data.text|Submit'
+    'get_html|{"action": "get_html"}|data.html|test-form'
+    'get_html_input|{"action": "get_html"}|data.html|name-input'
+    'eval_title|{"action": "eval", "expression": "document.title"}|data.result|Test Page'
+)
 
-test_get_html() {
-    local resp html
-    resp=$(post '{"action": "get_html"}')
-    assert_success "$resp" "get_html" || return 1
-    html=$(echo "$resp" | json_get "['data']['html']")
-    echo "$html" | grep -q "test-form" || { echo "FAIL: get_html: missing 'test-form' in html"; return 1; }
-    echo "$html" | grep -q "name-input" || { echo "FAIL: get_html: missing 'name-input' in html"; return 1; }
-    echo "OK: get_html (contains form elements)"
+test_page_content() {
+    local entry label action_json field expected
+    for entry in "${PAGE_CONTENT_CASES[@]}"; do
+        IFS='|' read -r label action_json field expected <<< "$entry"
+        local resp val
+        resp=$(post "$action_json")
+        assert_success "$resp" "$label" || return 1
+        val=$(echo "$resp" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for k in '${field}'.split('.'):
+    d = d[k]
+print(d)
+")
+        echo "$val" | grep -q "$expected" || { echo "FAIL: $label: '$expected' not in response"; return 1; }
+    done
+    echo "OK: page_content (${#PAGE_CONTENT_CASES[@]} cases passed)"
 }
 
 test_get_interactive_elements() {
@@ -77,45 +108,13 @@ test_calibrate() {
     echo "OK: calibrate (offset: $offset_x,$offset_y)"
 }
 
-test_eval() {
-    local resp val
-    resp=$(post '{"action": "eval", "expression": "document.title"}')
-    assert_success "$resp" "eval" || return 1
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "Test Page" "eval: document.title"
-}
-
-test_state() {
-    local resp status
-    resp=$(curl -sf "$BASE/state")
-    status=$(echo "$resp" | json_get "['status']")
-    assert_eq "$status" "ready" "state: status" || return 1
-    # Verify response has expected fields
-    echo "$resp" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-assert 'url' in d, 'missing url'
-assert 'title' in d, 'missing title'
-assert 'window_offset' in d, 'missing window_offset'
-" || { echo "FAIL: state: missing expected fields"; return 1; }
-    echo "OK: state (status=ready)"
-}
-
-test_health() {
-    local resp
-    resp=$(curl -sf "$BASE/health")
-    assert_eq "$resp" "ok" "health: response body"
-}
-
 ALL_TESTS+=(
     test_health
     test_ping
     test_state
     test_goto
-    test_get_text
-    test_get_html
+    test_page_content
     test_get_interactive_elements
     test_get_resolution
     test_calibrate
-    test_eval
 )

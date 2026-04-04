@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Any
 
 import uvicorn
+import yaml
 from browser import Browser, BrowserConfig
 from fastapi import FastAPI, Request
 from PIL import Image
@@ -117,6 +118,7 @@ _console_handler_pages: set[int] = set()
 
 HTTP_LISTEN_HOST = os.environ.get("HTTP_LISTEN_HOST", "0.0.0.0")
 HTTP_LISTEN_PORT = int(os.environ.get("HTTP_LISTEN_PORT", "8080"))
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip() or None
 
 # Parse CLI args: --script <path> (path provided by entrypoint from stdin)
 SCRIPT_PATH: str | None = None
@@ -295,6 +297,27 @@ async def dispatch_action(cmd: dict) -> dict:
         duration = cmd.get("duration", 1)
         await asyncio.sleep(float(duration))
         return make_response(True, {"slept": duration})
+
+    if action == "run_script":
+        steps = cmd.get("steps")
+        yaml_content = cmd.get("yaml")
+        if yaml_content:
+            script_data = yaml.safe_load(yaml_content)
+            if not script_data or not isinstance(script_data, dict):
+                return make_response(False, error="invalid YAML")
+            if "steps" not in script_data:
+                return make_response(False, error="YAML missing steps")
+        elif steps:
+            script_data = {
+                "name": cmd.get("name", "api_script"),
+                "on_error": cmd.get("on_error", "stop"),
+                "steps": steps,
+            }
+        else:
+            return make_response(False, error="steps or yaml required")
+        result = await run_script(script_data, dispatch_action, stdout=io.StringIO())
+        result.pop("_binary", None)
+        return make_response(True, result)
 
     if action == "handle_dialog":
         _next_dialog_action = {
@@ -827,6 +850,25 @@ async def execute_loader(loader, url: str) -> dict:
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
+# Serialize all browser-touching requests so only one runs at a time.
+_request_lock = asyncio.Lock()
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next: Any) -> Any:
+    """Reject requests without a valid Bearer token when AUTH_TOKEN is set.
+
+    /health is always allowed so HAProxy health checks work without auth.
+    """
+    if AUTH_TOKEN and request.url.path != "/health":
+        auth = request.headers.get("Authorization", "")
+        query_token = request.query_params.get("auth_token", "")
+        if auth != f"Bearer {AUTH_TOKEN}" and query_token != AUTH_TOKEN:
+            return JSONResponse(
+                {"success": False, "error": "Unauthorized"}, status_code=401
+            )
+    return await call_next(request)
+
 
 @app.post("/")
 async def handle_command(request: Request) -> JSONResponse:
@@ -841,12 +883,13 @@ async def handle_command(request: Request) -> JSONResponse:
     params = {k: v for k, v in cmd.items() if k != "action"}
     log_request(action, params if params else None)
 
-    try:
-        result = await dispatch_action(cmd)
-        result.pop("_binary", None)
-        return JSONResponse(result)
-    except Exception as e:
-        return JSONResponse(make_response(False, error=str(e)))
+    async with _request_lock:
+        try:
+            result = await dispatch_action(cmd)
+            result.pop("_binary", None)
+            return JSONResponse(result)
+        except Exception as e:
+            return JSONResponse(make_response(False, error=str(e)))
 
 
 def _resize_png(data: bytes, request: Request) -> bytes:
@@ -1042,7 +1085,7 @@ async def main() -> None:
 
         # Register MCP dispatcher
         if _mcp_available:
-            set_dispatcher(dispatch_action)
+            set_dispatcher(dispatch_action, _request_lock)
             log("MCP server mounted at /mcp")
 
         log("Browser ready")
@@ -1055,6 +1098,8 @@ async def main() -> None:
             lifespan="on",
         )
         server = uvicorn.Server(uvi_config)
+        if AUTH_TOKEN:
+            log("API key auth enabled")
         log(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
         await server.serve()
 

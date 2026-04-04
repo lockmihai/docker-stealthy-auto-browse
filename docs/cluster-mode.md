@@ -17,7 +17,7 @@ curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/ma
 docker compose -f docker-compose.cluster.yml up -d
 ```
 
-This starts Redis, 10 browser containers, and the HAProxy queue-proxy. The entry point is `http://localhost:8080` — same API as the single-container mode. The MCP endpoint at `/mcp/` also works through the proxy with the same sticky session routing.
+This starts Redis, browser containers (10 by default), and the HAProxy queue-proxy. The entry point is `http://localhost:8080` — same API as the single-container mode. The MCP endpoint at `/mcp/` also works through the proxy with the same sticky session routing.
 
 ### Scale Up
 

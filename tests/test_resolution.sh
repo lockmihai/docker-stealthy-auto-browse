@@ -1,5 +1,5 @@
 #!/bin/bash
-# tests/test_env.sh - Environment variable tests (resolution, persistent profiles)
+# tests/test_resolution.sh - Display resolution and persistent profile tests
 
 # --- Table-driven resolution tests ---
 # Each case: "label|WxH|use_viewport|check_browser|check_desktop"

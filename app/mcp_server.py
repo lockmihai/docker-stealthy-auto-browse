@@ -6,6 +6,7 @@ over the Model Context Protocol. Mounted at /mcp on the main HTTP server.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Callable, Coroutine
 
@@ -17,12 +18,17 @@ from mcp.types import TextContent
 mcp = FastMCP("stealthy-auto-browse")
 
 _dispatch: Callable[[dict], Coroutine[Any, Any, dict]] | None = None
+_lock: asyncio.Lock | None = None
 
 
-def set_dispatcher(fn: Callable[[dict], Coroutine[Any, Any, dict]]) -> None:
-    """Register the dispatch_action function from main.py."""
-    global _dispatch
+def set_dispatcher(
+    fn: Callable[[dict], Coroutine[Any, Any, dict]],
+    lock: asyncio.Lock | None = None,
+) -> None:
+    """Register the dispatch_action function and request lock from main.py."""
+    global _dispatch, _lock
     _dispatch = fn
+    _lock = lock
 
 
 async def _call(action: str, **params: Any) -> dict:
@@ -31,6 +37,9 @@ async def _call(action: str, **params: Any) -> dict:
         return {"success": False, "error": "Browser not ready"}
     cmd: dict[str, Any] = {"action": action}
     cmd.update({k: v for k, v in params.items() if v is not None})
+    if _lock:
+        async with _lock:
+            return await _dispatch(cmd)
     return await _dispatch(cmd)
 
 
@@ -305,3 +314,33 @@ async def browser_action(action: str, params: dict | None = None) -> str:
     """
     p = params or {}
     return _text_result(await _call(action, **p))
+
+
+@mcp.tool
+async def run_script(
+    steps: list[dict],
+    name: str = "mcp_script",
+    on_error: str = "stop",
+) -> str:
+    """Run multiple browser actions as a single atomic script.
+
+    Each step is an action dict like {"action": "goto", "url": "..."}.
+    Steps with "output_id" collect their results in the outputs dict.
+    All steps run sequentially under a single request lock.
+
+    Example steps:
+        [
+            {"action": "goto", "url": "https://example.com", "wait_until": "domcontentloaded"},
+            {"action": "sleep", "duration": 2},
+            {"action": "get_text", "output_id": "page_text"},
+            {"action": "get_html", "output_id": "page_html"}
+        ]
+
+    Args:
+        steps: List of action dicts to execute sequentially.
+        name: Optional script name for logging.
+        on_error: "stop" (default) to halt on first failure, "continue" to keep going.
+    """
+    return _text_result(
+        await _call("run_script", steps=steps, name=name, on_error=on_error)
+    )

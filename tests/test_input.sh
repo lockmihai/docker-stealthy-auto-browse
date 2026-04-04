@@ -84,57 +84,79 @@ test_send_key() {
     assert_eq "$val" "a" "send_key: keydown listener captured 'a'"
 }
 
-test_enter_fullscreen() {
-    post '{"action": "enter_fullscreen"}' >/dev/null
-    sleep 1
-    local resp val
-    resp=$(post '{"action": "eval", "expression": "!!document.fullscreenElement"}')
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "True" "enter_fullscreen: fullscreenElement set"
+# --- Table-driven fullscreen tests ---
+# Each case: "label|action|expected_fullscreen"
+FULLSCREEN_CASES=(
+    "enter|enter_fullscreen|True"
+    "exit|exit_fullscreen|False"
+)
+
+test_fullscreen() {
+    for entry in "${FULLSCREEN_CASES[@]}"; do
+        IFS='|' read -r label action expected <<< "$entry"
+        # Always enter fullscreen first so exit test is self-contained
+        post '{"action": "enter_fullscreen"}' >/dev/null
+        sleep 1
+        if [ "$action" = "exit_fullscreen" ]; then
+            post '{"action": "exit_fullscreen"}' >/dev/null
+            sleep 1
+        fi
+        local resp val
+        resp=$(post '{"action": "eval", "expression": "!!document.fullscreenElement"}')
+        val=$(echo "$resp" | json_get "['data']['result']")
+        assert_eq "$val" "$expected" "fullscreen[$label]" || return 1
+    done
+    echo "OK: fullscreen (${#FULLSCREEN_CASES[@]} cases passed)"
 }
 
-test_exit_fullscreen() {
-    # Enter fullscreen first so this test is self-contained
-    post '{"action": "enter_fullscreen"}' >/dev/null
-    sleep 1
-    post '{"action": "exit_fullscreen"}' >/dev/null
-    sleep 1
-    local resp val
-    resp=$(post '{"action": "eval", "expression": "!!document.fullscreenElement"}')
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "False" "exit_fullscreen: fullscreenElement cleared"
+# --- Table-driven selector input tests ---
+
+_post_json() {
+    # Build JSON from python args and POST it. Avoids shell quoting issues with XPath etc.
+    python3 -c "
+import json,sys,urllib.request
+d = json.loads(sys.argv[1])
+body = json.dumps(d).encode()
+req = urllib.request.Request(sys.argv[2], data=body, headers={'Content-Type':'application/json'})
+print(urllib.request.urlopen(req, timeout=30).read().decode())
+" "$1" "$BASE"
 }
 
-test_fill() {
-    # CSS selector
-    post '{"action": "fill", "selector": "#name-input", "value": "hello world"}' >/dev/null
-    local resp val
-    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"name-input\").value"}')
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "hello world" "fill: CSS selector" || return 1
+_selector_input_case() {
+    local label="$1" action_json="$2" element_id="$3" expected="$4"
 
-    # XPath selector
-    post '{"action": "fill", "selector": "xpath=//input[@id=\"name-input\"]", "value": "xpath fill"}' >/dev/null
-    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"name-input\").value"}')
+    # Clear input first
+    _post_json "{\"action\":\"fill\",\"selector\":\"#${element_id}\",\"value\":\"\"}" >/dev/null
+
+    # For type action, click to focus first
+    if echo "$action_json" | grep -q '"type"'; then
+        _post_json "{\"action\":\"click\",\"selector\":\"#${element_id}\"}" >/dev/null
+    fi
+
+    # Execute action
+    _post_json "$action_json" >/dev/null
+
+    local resp val
+    resp=$(post "{\"action\": \"eval\", \"expression\": \"document.getElementById('${element_id}').value\"}")
     val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "xpath fill" "fill: XPath selector"
+    assert_eq "$val" "$expected" "selector_input[$label]" || return 1
+    echo "  - $label: OK"
 }
 
-test_type_action() {
-    # CSS selector
-    post '{"action": "click", "selector": "#email-input"}' >/dev/null
-    post '{"action": "type", "selector": "#email-input", "text": "typed", "delay": 0.02}' >/dev/null
-    local resp val
-    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"email-input\").value"}')
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "typed" "type: CSS selector" || return 1
-
-    # XPath selector
-    post '{"action": "fill", "selector": "#email-input", "value": ""}' >/dev/null
-    post '{"action": "type", "selector": "xpath=//input[@id=\"email-input\"]", "text": "xtyped", "delay": 0.02}' >/dev/null
-    resp=$(post '{"action": "eval", "expression": "document.getElementById(\"email-input\").value"}')
-    val=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$val" "xtyped" "type: XPath selector"
+test_selector_input() {
+    _selector_input_case "fill_css" \
+        '{"action":"fill","selector":"#name-input","value":"hello world"}' \
+        "name-input" "hello world" || return 1
+    _selector_input_case "fill_xpath" \
+        '{"action":"fill","selector":"xpath=//input[@id=\"name-input\"]","value":"xpath fill"}' \
+        "name-input" "xpath fill" || return 1
+    _selector_input_case "type_css" \
+        '{"action":"type","selector":"#email-input","text":"typed","delay":0.02}' \
+        "email-input" "typed" || return 1
+    _selector_input_case "type_xpath" \
+        '{"action":"type","selector":"xpath=//input[@id=\"email-input\"]","text":"xtyped","delay":0.02}' \
+        "email-input" "xtyped" || return 1
+    echo "OK: selector_input (4 cases passed)"
 }
 
 test_click() {
@@ -162,9 +184,7 @@ ALL_TESTS+=(
     test_scroll
     test_system_type
     test_send_key
-    test_enter_fullscreen
-    test_exit_fullscreen
-    test_fill
-    test_type_action
+    test_fullscreen
+    test_selector_input
     test_click
 )

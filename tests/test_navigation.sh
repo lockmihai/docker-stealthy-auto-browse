@@ -26,46 +26,48 @@ test_refresh_wait_until() {
     echo "  OK: refresh with wait_until=load (url=$url)"
 }
 
-test_goto_referer() {
+# --- Table-driven referer tests ---
+# Each case: "label|referer_value|expected"
+# Empty referer_value means no referer param sent. Expected is what the server echoes back.
+REFERER_CASES=(
+    "with_referer|https://www.google.com/search?q=test|https://www.google.com/search?q=test"
+    "no_referer||"
+)
+
+_run_referer_case() {
+    local label="$1" referer="$2" expected="$3"
     local referer_url="${WEB_BASE}/referer"
-    local fake_referer="https://www.google.com/search?q=test"
 
-    # goto with referer
+    local goto_json
+    if [ -n "$referer" ]; then
+        goto_json="{\"action\": \"goto\", \"url\": \"$referer_url\", \"referer\": \"$referer\"}"
+    else
+        goto_json="{\"action\": \"goto\", \"url\": \"$referer_url\"}"
+    fi
+
     local resp
-    resp=$(post "{\"action\": \"goto\", \"url\": \"$referer_url\", \"referer\": \"$fake_referer\"}")
-    assert_success "$resp" "goto_referer: goto success" || return 1
+    resp=$(post "$goto_json")
+    assert_success "$resp" "referer[$label]: goto" || return 1
 
-    # Page should show JSON with our referer
-    local text
+    local text got_referer
     text=$(post '{"action": "get_text"}')
-    local got_referer
     got_referer=$(echo "$text" | python3 -c "import sys,json; t=json.load(sys.stdin)['data']['text']; d=json.loads(t); print(d['referer'])")
-    assert_eq "$got_referer" "$fake_referer" "goto_referer: referer matches" || return 1
+    assert_eq "$got_referer" "$expected" "referer[$label]: value" || return 1
 
-    echo "OK: goto_referer (referer=$fake_referer)"
+    echo "  - $label: OK (referer='$got_referer')"
 }
 
-test_goto_no_referer() {
-    local referer_url="${WEB_BASE}/referer"
-
-    # goto without referer
-    local resp
-    resp=$(post "{\"action\": \"goto\", \"url\": \"$referer_url\"}")
-    assert_success "$resp" "goto_no_referer: goto success" || return 1
-
-    # Referer should be empty
-    local text
-    text=$(post '{"action": "get_text"}')
-    local got_referer
-    got_referer=$(echo "$text" | python3 -c "import sys,json; t=json.load(sys.stdin)['data']['text']; d=json.loads(t); print(d['referer'])")
-    assert_eq "$got_referer" "" "goto_no_referer: referer empty" || return 1
-
-    echo "OK: goto_no_referer (no referer sent)"
+test_goto_referer() {
+    local entry label referer expected
+    for entry in "${REFERER_CASES[@]}"; do
+        IFS='|' read -r label referer expected <<< "$entry"
+        _run_referer_case "$label" "$referer" "$expected" || return 1
+    done
+    echo "OK: goto_referer (${#REFERER_CASES[@]} cases passed)"
 }
 
 ALL_TESTS+=(
     test_refresh
     test_refresh_wait_until
     test_goto_referer
-    test_goto_no_referer
 )

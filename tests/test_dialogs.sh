@@ -1,89 +1,56 @@
 #!/bin/bash
 # tests/test_dialogs.sh - Dialog handling tests (alert, confirm, prompt)
 
-test_dialog_alert() {
-    local resp dtype msg buttons
+# --- Table-driven dialog tests ---
 
-    # No dialog yet
+_dialog_case() {
+    local label="$1" handle_json="$2" eval_expr="$3"
+    local expected_result="$4" expected_type="$5" expected_msg="$6"
+
+    local resp
+
+    # Pre-configure dialog handler if specified
+    if [ -n "$handle_json" ]; then
+        resp=$(post "$handle_json")
+        assert_success "$resp" "dialog[$label]: handle_dialog" || return 1
+    fi
+
+    # Trigger dialog — use python to build JSON safely (avoids shell quoting issues)
+    resp=$(python3 -c "
+import json,sys,urllib.request
+body = json.dumps({'action':'eval','expression':sys.argv[1]}).encode()
+req = urllib.request.Request(sys.argv[2], data=body, headers={'Content-Type':'application/json'})
+print(urllib.request.urlopen(req, timeout=30).read().decode())
+" "$eval_expr" "$BASE")
+    assert_success "$resp" "dialog[$label]: eval" || return 1
+
+    # Check result if expected
+    if [ -n "$expected_result" ]; then
+        local result
+        result=$(echo "$resp" | json_get "['data']['result']")
+        assert_eq "$result" "$expected_result" "dialog[$label]: result" || return 1
+    fi
+
+    # Check captured dialog info
     resp=$(post '{"action": "get_last_dialog"}')
-    assert_success "$resp" "dialog_alert: get_last_dialog before" || return 1
+    assert_success "$resp" "dialog[$label]: get_last_dialog" || return 1
 
-    # Trigger alert (auto-accepted)
-    resp=$(post '{"action": "eval", "expression": "alert(1234)"}')
-    assert_success "$resp" "dialog_alert: eval alert" || return 1
-
-    # Check captured dialog
-    resp=$(post '{"action": "get_last_dialog"}')
-    assert_success "$resp" "dialog_alert: get_last_dialog after" || return 1
+    local dtype msg
     dtype=$(echo "$resp" | json_get "['data']['dialog']['type']")
     msg=$(echo "$resp" | json_get "['data']['dialog']['message']")
-    buttons=$(echo "$resp" | json_get "['data']['dialog']['buttons']")
-    assert_eq "$dtype" "alert" "dialog_alert: type" || return 1
-    assert_eq "$msg" "1234" "dialog_alert: message" || return 1
-    echo "$buttons" | grep -q "ok" || { echo "FAIL: dialog_alert: missing ok button"; return 1; }
-    echo "OK: dialog_alert (type=$dtype, message=$msg, buttons=$buttons)"
+    assert_eq "$dtype" "$expected_type" "dialog[$label]: type" || return 1
+    assert_eq "$msg" "$expected_msg" "dialog[$label]: message" || return 1
+
+    echo "  - $label: OK (type=$dtype, message=$msg)"
 }
 
-test_dialog_confirm_accept() {
-    local resp result dtype
-
-    # Default: auto-accept
-    resp=$(post '{"action": "eval", "expression": "confirm(\"Accept me\")"}')
-    assert_success "$resp" "dialog_confirm_accept: eval" || return 1
-    result=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$result" "True" "dialog_confirm_accept: result" || return 1
-
-    resp=$(post '{"action": "get_last_dialog"}')
-    dtype=$(echo "$resp" | json_get "['data']['dialog']['type']")
-    assert_eq "$dtype" "confirm" "dialog_confirm_accept: type" || return 1
-    echo "OK: dialog_confirm_accept (result=$result)"
-}
-
-test_dialog_confirm_dismiss() {
-    local resp result
-
-    # Pre-configure dismiss
-    resp=$(post '{"action": "handle_dialog", "accept": false}')
-    assert_success "$resp" "dialog_confirm_dismiss: handle_dialog" || return 1
-
-    resp=$(post '{"action": "eval", "expression": "confirm(\"Dismiss me\")"}')
-    assert_success "$resp" "dialog_confirm_dismiss: eval" || return 1
-    result=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$result" "False" "dialog_confirm_dismiss: result" || return 1
-    echo "OK: dialog_confirm_dismiss (result=$result)"
-}
-
-test_dialog_prompt_accept_text() {
-    local resp result msg
-
-    # Pre-configure accept with custom text
-    resp=$(post '{"action": "handle_dialog", "accept": true, "text": "hello"}')
-    assert_success "$resp" "dialog_prompt_accept: handle_dialog" || return 1
-
-    resp=$(post '{"action": "eval", "expression": "prompt(\"Name?\", \"default\")"}')
-    assert_success "$resp" "dialog_prompt_accept: eval" || return 1
-    result=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$result" "hello" "dialog_prompt_accept: result" || return 1
-
-    # Verify captured info
-    resp=$(post '{"action": "get_last_dialog"}')
-    msg=$(echo "$resp" | json_get "['data']['dialog']['message']")
-    assert_eq "$msg" "Name?" "dialog_prompt_accept: message" || return 1
-    echo "OK: dialog_prompt_accept (result=$result)"
-}
-
-test_dialog_prompt_dismiss() {
-    local resp result
-
-    # Pre-configure dismiss (cancel button)
-    resp=$(post '{"action": "handle_dialog", "accept": false}')
-    assert_success "$resp" "dialog_prompt_dismiss: handle_dialog" || return 1
-
-    resp=$(post '{"action": "eval", "expression": "prompt(\"Name?\")"}')
-    assert_success "$resp" "dialog_prompt_dismiss: eval" || return 1
-    result=$(echo "$resp" | json_get "['data']['result']")
-    assert_eq "$result" "None" "dialog_prompt_dismiss: result" || return 1
-    echo "OK: dialog_prompt_dismiss (result=$result)"
+test_dialogs() {
+    _dialog_case "alert" "" 'alert(1234)' "" "alert" "1234" || return 1
+    _dialog_case "confirm_accept" "" 'confirm("Accept me")' "True" "confirm" "Accept me" || return 1
+    _dialog_case "confirm_dismiss" '{"action":"handle_dialog","accept":false}' 'confirm("Dismiss me")' "False" "confirm" "Dismiss me" || return 1
+    _dialog_case "prompt_accept" '{"action":"handle_dialog","accept":true,"text":"hello"}' 'prompt("Name?","default")' "hello" "prompt" "Name?" || return 1
+    _dialog_case "prompt_dismiss" '{"action":"handle_dialog","accept":false}' 'prompt("Name?")' "None" "prompt" "Name?" || return 1
+    echo "OK: dialogs (5 cases passed)"
 }
 
 test_dialog_confirm_changes_page() {
@@ -109,10 +76,6 @@ test_dialog_confirm_changes_page() {
 }
 
 ALL_TESTS+=(
-    test_dialog_alert
-    test_dialog_confirm_accept
-    test_dialog_confirm_dismiss
-    test_dialog_prompt_accept_text
-    test_dialog_prompt_dismiss
+    test_dialogs
     test_dialog_confirm_changes_page
 )

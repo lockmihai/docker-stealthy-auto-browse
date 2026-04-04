@@ -44,52 +44,50 @@ test_delete_cookies() {
     echo "OK: delete_cookies (count=0)"
 }
 
-test_local_storage() {
-    local resp val
+# --- Table-driven storage tests ---
+# Each case: "type|set_key|set_val"
+STORAGE_CASES=(
+    "local|test_key|test_val"
+    "session|sess_key|sess_val"
+)
 
-    # Set localStorage
-    resp=$(post '{"action": "set_storage", "type": "local", "key": "test_key", "value": "test_val"}')
-    assert_success "$resp" "set_storage: local" || return 1
+_run_storage_case() {
+    local stype="$1" key="$2" val="$3"
+    local resp got
 
-    # Get localStorage
-    resp=$(post '{"action": "get_storage", "type": "local"}')
-    assert_success "$resp" "get_storage: local" || return 1
-    val=$(echo "$resp" | json_get "['data']['items']['test_key']")
-    assert_eq "$val" "test_val" "get_storage: local value" || return 1
+    # Set
+    resp=$(post "{\"action\": \"set_storage\", \"type\": \"$stype\", \"key\": \"$key\", \"value\": \"$val\"}")
+    assert_success "$resp" "set_storage: $stype" || return 1
 
-    # Clear localStorage
-    resp=$(post '{"action": "clear_storage", "type": "local"}')
-    assert_success "$resp" "clear_storage: local" || return 1
+    # Get and verify value
+    resp=$(post "{\"action\": \"get_storage\", \"type\": \"$stype\"}")
+    assert_success "$resp" "get_storage: $stype" || return 1
+    got=$(echo "$resp" | json_get "['data']['items']['$key']")
+    assert_eq "$got" "$val" "get_storage: $stype value" || return 1
+
+    # Clear
+    resp=$(post "{\"action\": \"clear_storage\", \"type\": \"$stype\"}")
+    assert_success "$resp" "clear_storage: $stype" || return 1
 
     # Verify empty
-    resp=$(post '{"action": "get_storage", "type": "local"}')
-    val=$(echo "$resp" | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['items']))")
-    assert_eq "$val" "0" "clear_storage: local empty" || return 1
-    echo "OK: local_storage (set, get, clear)"
+    resp=$(post "{\"action\": \"get_storage\", \"type\": \"$stype\"}")
+    got=$(echo "$resp" | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['items']))")
+    assert_eq "$got" "0" "clear_storage: $stype empty" || return 1
+
+    echo "  - $stype: OK (set, get, clear)"
 }
 
-test_session_storage() {
-    local resp val
-
-    # Set sessionStorage
-    resp=$(post '{"action": "set_storage", "type": "session", "key": "sess_key", "value": "sess_val"}')
-    assert_success "$resp" "set_storage: session" || return 1
-
-    # Get sessionStorage
-    resp=$(post '{"action": "get_storage", "type": "session"}')
-    assert_success "$resp" "get_storage: session" || return 1
-    val=$(echo "$resp" | json_get "['data']['items']['sess_key']")
-    assert_eq "$val" "sess_val" "get_storage: session value" || return 1
-
-    # Clear sessionStorage
-    resp=$(post '{"action": "clear_storage", "type": "session"}')
-    assert_success "$resp" "clear_storage: session" || return 1
-    echo "OK: session_storage (set, get, clear)"
+test_storage() {
+    local entry stype key val
+    for entry in "${STORAGE_CASES[@]}"; do
+        IFS='|' read -r stype key val <<< "$entry"
+        _run_storage_case "$stype" "$key" "$val" || return 1
+    done
+    echo "OK: storage (${#STORAGE_CASES[@]} types passed)"
 }
 
 ALL_TESTS+=(
     test_set_get_cookies
     test_delete_cookies
-    test_local_storage
-    test_session_storage
+    test_storage
 )

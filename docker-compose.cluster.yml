@@ -1,6 +1,6 @@
 # Stealthy Auto Browse - Load Balanced Cluster
 #
-# 10 browser instances behind HAProxy which:
+# Browser instances (default 10, set MAX_CONCURRENT to change) behind HAProxy which:
 #   - Queues requests when all instances are busy (timeout: QUEUE_TIMEOUT)
 #   - Limits concurrency to MAX_CONCURRENT simultaneous requests
 #   - Sticky sessions via INSTANCEID cookie

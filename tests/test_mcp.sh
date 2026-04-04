@@ -168,6 +168,20 @@ try:
 except Exception as e:
     results.append(("9. screenshot", False, str(e)))
 
+# 10. run_script
+try:
+    r = tool_call(10, "run_script", {
+        "steps": [
+            {"action": "goto", "url": test_page, "wait_until": "load"},
+            {"action": "eval", "expression": "document.title", "output_id": "title"}
+        ]
+    })
+    txt = tool_text(r)
+    ok = "Test Page" in txt and '"success": true' in txt or '"success":true' in txt
+    results.append(("10. run_script", ok, txt[:120] if not ok else ""))
+except Exception as e:
+    results.append(("10. run_script", False, str(e)))
+
 # Output results as JSON for shell to parse
 print(json.dumps(results))
 PYEOF

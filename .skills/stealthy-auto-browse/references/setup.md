@@ -32,6 +32,7 @@ Port 8080 is the HTTP API. Port 5900 is a noVNC web viewer.
 | `USE_VIEWPORT` | `false` | Playwright viewport control. Required for width < ~450px. Reduces stealth. |
 | `HTTP_LISTEN_HOST` | `0.0.0.0` | HTTP API bind address. |
 | `HTTP_LISTEN_PORT` | `8080` | HTTP API port. |
+| `AUTH_TOKEN` | — | If set, all requests (except `/health`) require `Authorization: Bearer <key>`. |
 | `VNC_LISTEN_HOST` | `0.0.0.0` | VNC bind address. |
 | `VNC_LISTEN_PORT` | `5900` | noVNC web viewer port. |
 
@@ -80,6 +81,20 @@ Or via `~/.openclaw/openclaw.json`:
   }
 }
 ```
+
+## Cluster Mode Setup
+
+Run multiple browser instances behind HAProxy with request queuing, sticky sessions, and Redis cookie sync. The number of instances is controlled by `MAX_CONCURRENT` (default: 10):
+
+```bash
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
+docker compose -f docker-compose.cluster.yml up -d
+```
+
+Entry point is `http://localhost:8080` — same API and MCP endpoint as single-container mode.
+
+Set `STEALTHY_AUTO_BROWSE_URL=http://localhost:8080` as usual.
 
 ## Pre-installed Extensions
 

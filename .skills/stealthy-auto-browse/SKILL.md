@@ -38,6 +38,12 @@ export STEALTHY_AUTO_BROWSE_URL=http://localhost:8080
 
 All commands: `POST $STEALTHY_AUTO_BROWSE_URL/` with JSON body `{"action": "name", ...params}`.
 
+If `AUTH_TOKEN` is set on the server, include it on every request (except `/health`):
+
+```
+Authorization: Bearer <key>
+```
+
 Every response:
 
 ```json
@@ -279,6 +285,28 @@ Call `calibrate` after fullscreen changes.
 curl $STEALTHY_AUTO_BROWSE_URL/health     # "ok" when ready
 curl $STEALTHY_AUTO_BROWSE_URL/state      # {"status", "url", "title", "window_offset"}
 ```
+
+## MCP Server
+
+The browser exposes all actions as MCP tools via Streamable HTTP at `/mcp/` on the same port as the HTTP API.
+
+```
+http://localhost:8080/mcp/
+```
+
+Connect any MCP-compatible client to that URL. All actions from the HTTP API are available as tools — `goto`, `screenshot`, `system_click`, `system_type`, `eval_js`, `get_text`, `get_cookies`, `browser_action` (generic fallback for everything else), and more.
+
+Works in both standalone and cluster mode — HAProxy routes MCP traffic with the same sticky sessions.
+
+## Cluster Mode
+
+Run multiple browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync. For setup see [references/setup.md](references/setup.md).
+
+Entry point is `http://localhost:8080` — same API. HAProxy queues requests when all instances are busy instead of returning errors.
+
+**Sticky sessions:** HAProxy sets an `INSTANCEID` cookie. Send it back on subsequent requests to keep routing to the same browser instance. All browser state (tabs, DOM, JS, local storage) lives on that specific container — only cookies sync via Redis.
+
+**Redis cookie sync:** Cookies set on any instance propagate to all others instantly via PubSub. Log in once, the whole fleet is authenticated.
 
 ## Script Mode
 
