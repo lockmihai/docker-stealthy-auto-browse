@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages (system-level, needs root)
-RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui aiohttp Pillow pyyaml "redis[hiredis]"
+RUN pip install --no-cache-dir "camoufox[geoip]" pyautogui fastapi uvicorn fastmcp Pillow pyyaml "redis[hiredis]"
 
 # Create non-root user and directories
 RUN groupadd -g 1000 browser && useradd -u 1000 -g 1000 -m browser

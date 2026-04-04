@@ -11,6 +11,7 @@ Endpoints:
     GET /screenshot/desktop - Get full desktop screenshot as PNG
     GET /state              - Get browser state as JSON
     GET /health             - Health check
+    POST /mcp               - MCP Streamable HTTP (AI agent interface)
 """
 
 from __future__ import annotations
@@ -26,10 +27,12 @@ import time
 from datetime import datetime
 from typing import Any
 
-from aiohttp import web
+import uvicorn
 from browser import Browser, BrowserConfig
+from fastapi import FastAPI, Request
 from PIL import Image
 from script_runner import load_script, run_script
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 from system import System
 
 from loaders import find_loader, load_loaders, substitute_url
@@ -39,7 +42,6 @@ from loaders import find_loader, load_loaders, substitute_url
 # =============================================================================
 
 CONTENT_TYPE_IMAGE_PNG = "image/png"
-CONTENT_TYPE_TEXT_PLAIN = "text/plain"
 
 # =============================================================================
 # LOGGING
@@ -513,7 +515,7 @@ async def dispatch_action(cmd: dict) -> dict:
         resp = make_response(True, {"type": ss_type, "size": len(data)})
         if path:
             resp["data"]["path"] = path
-        # Attach binary for script runner to base64-encode
+        # Attach binary for script runner / MCP to use
         resp["_binary"] = data
         return resp
 
@@ -820,17 +822,20 @@ async def execute_loader(loader, url: str) -> dict:
 
 
 # =============================================================================
-# HTTP HANDLERS
+# FASTAPI APP
 # =============================================================================
 
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-async def handle_command(request: web.Request) -> web.Response:
+
+@app.post("/")
+async def handle_command(request: Request) -> JSONResponse:
     """POST / - Execute a command."""
     try:
         cmd = await request.json()
     except Exception as e:
         log(f"ERROR: Invalid JSON: {e}")
-        return web.json_response(make_response(False, error=f"Invalid JSON: {e}"))
+        return JSONResponse(make_response(False, error=f"Invalid JSON: {e}"))
 
     action = cmd.get("action", "")
     params = {k: v for k, v in cmd.items() if k != "action"}
@@ -839,14 +844,14 @@ async def handle_command(request: web.Request) -> web.Response:
     try:
         result = await dispatch_action(cmd)
         result.pop("_binary", None)
-        return web.json_response(result)
+        return JSONResponse(result)
     except Exception as e:
-        return web.json_response(make_response(False, error=str(e)))
+        return JSONResponse(make_response(False, error=str(e)))
 
 
-def _resize_png(data: bytes, request: web.Request) -> bytes:
+def _resize_png(data: bytes, request: Request) -> bytes:
     """Resize PNG bytes based on query params: width, height, whLargest."""
-    q = request.query
+    q = request.query_params
     w_str = q.get("width")
     h_str = q.get("height")
     largest_str = q.get("whLargest")
@@ -881,21 +886,23 @@ def _resize_png(data: bytes, request: web.Request) -> bytes:
     return buf.getvalue()
 
 
-async def handle_screenshot_browser(request: web.Request) -> web.Response:
+@app.get("/screenshot/browser")
+async def handle_screenshot_browser(request: Request) -> Response:
     """GET /screenshot/browser - Return browser viewport PNG screenshot."""
     page = get_active_page()
     if not page:
-        return web.Response(status=503, text="No active page")
+        return PlainTextResponse("No active page", status_code=503)
 
     try:
         data = await page.screenshot(type="png")
         data = _resize_png(data, request)
-        return web.Response(body=data, content_type=CONTENT_TYPE_IMAGE_PNG)
+        return Response(content=data, media_type=CONTENT_TYPE_IMAGE_PNG)
     except Exception as e:
-        return web.Response(status=500, text=str(e))
+        return PlainTextResponse(str(e), status_code=500)
 
 
-async def handle_screenshot_desktop(request: web.Request) -> web.Response:
+@app.get("/screenshot/desktop")
+async def handle_screenshot_desktop(request: Request) -> Response:
     """GET /screenshot/desktop - Return full desktop PNG screenshot using scrot."""
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
@@ -907,25 +914,26 @@ async def handle_screenshot_desktop(request: web.Request) -> web.Response:
             text=True,
         )
         if result.returncode != 0:
-            return web.Response(status=500, text=f"scrot failed: {result.stderr}")
+            return PlainTextResponse(f"scrot failed: {result.stderr}", status_code=500)
 
         with open(tmp_path, "rb") as f:
             data = f.read()
 
         os.unlink(tmp_path)
         data = _resize_png(data, request)
-        return web.Response(body=data, content_type=CONTENT_TYPE_IMAGE_PNG)
+        return Response(content=data, media_type=CONTENT_TYPE_IMAGE_PNG)
     except Exception as e:
-        return web.Response(status=500, text=str(e))
+        return PlainTextResponse(str(e), status_code=500)
 
 
-async def handle_state(_request: web.Request) -> web.Response:
+@app.get("/state")
+async def handle_state() -> JSONResponse:
     """GET /state - Return browser state."""
     if not browser:
-        return web.json_response({"status": "not_ready"})
+        return JSONResponse({"status": "not_ready"})
 
     page = get_active_page()
-    return web.json_response(
+    return JSONResponse(
         {
             "status": "ready" if page else "no_page",
             "url": browser.state.url,
@@ -935,25 +943,30 @@ async def handle_state(_request: web.Request) -> web.Response:
     )
 
 
-async def handle_health(_request: web.Request) -> web.Response:
+@app.get("/health")
+async def handle_health() -> PlainTextResponse:
     """GET /health - Health check."""
-    return web.Response(text="ok")
+    return PlainTextResponse("ok")
 
 
-async def run_server(app: web.Application) -> None:
-    """Run the HTTP server."""
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, HTTP_LISTEN_HOST, HTTP_LISTEN_PORT)
-    await site.start()
-    log(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
+# =============================================================================
+# MCP SERVER (mounted at /mcp)
+# =============================================================================
 
-    # Keep running until browser closes
-    while browser and browser._context and browser._context.pages:
-        await asyncio.sleep(1)
+try:
+    from mcp_server import mcp, set_dispatcher
 
-    log("Browser closed, shutting down")
-    await runner.cleanup()
+    mcp_app = mcp.http_app(transport="streamable-http", path="/")
+    app.mount("/mcp", mcp_app)
+    app.router.lifespan_context = mcp_app.router.lifespan_context
+    _mcp_available = True
+except ImportError:
+    _mcp_available = False
+
+
+# =============================================================================
+# SERVER LIFECYCLE
+# =============================================================================
 
 
 async def _run_script_mode(script_path: str, config: BrowserConfig) -> None:
@@ -1013,14 +1026,6 @@ async def main() -> None:
 
     log("Starting browser")
 
-    # Setup HTTP routes
-    app = web.Application()
-    app.router.add_post("/", handle_command)
-    app.router.add_get("/screenshot/browser", handle_screenshot_browser)
-    app.router.add_get("/screenshot/desktop", handle_screenshot_desktop)
-    app.router.add_get("/state", handle_state)
-    app.router.add_get("/health", handle_health)
-
     async with Browser(config) as b:
         browser = b
         await browser._get_page()
@@ -1035,9 +1040,23 @@ async def main() -> None:
             system.window_offset = await get_window_offset_js(page)
         log(f"Window offset: {system.window_offset}")
 
+        # Register MCP dispatcher
+        if _mcp_available:
+            set_dispatcher(dispatch_action)
+            log("MCP server mounted at /mcp")
+
         log("Browser ready")
 
-        await run_server(app)
+        uvi_config = uvicorn.Config(
+            app,
+            host=HTTP_LISTEN_HOST,
+            port=HTTP_LISTEN_PORT,
+            log_level="warning",
+            lifespan="on",
+        )
+        server = uvicorn.Server(uvi_config)
+        log(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
+        await server.serve()
 
     log("Done")
 

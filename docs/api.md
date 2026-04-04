@@ -9,6 +9,7 @@
 | `/screenshot/desktop` | GET    | Full virtual desktop as PNG — including browser chrome   |
 | `/state`              | GET    | Current URL, page title, and window offset as JSON       |
 | `/health`             | GET    | Returns `ok` when the browser is ready                   |
+| `/mcp/`               | POST   | MCP (Model Context Protocol) Streamable HTTP endpoint    |
 
 ## Request / Response Format
 

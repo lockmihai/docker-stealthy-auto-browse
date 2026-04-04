@@ -13,6 +13,7 @@ Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and every other bot detector
 | **PyAutoGUI** | Generates real OS-level mouse movements and keystrokes. The browser receives these as genuine user input — it has no idea it's being automated.                                             |
 | **noVNC**     | Web-based VNC client so you can watch the browser in real time from your own browser. Great for debugging and seeing exactly what's happening.                                              |
 | **HTTP API**  | A JSON API on port 8080 that lets you control everything — navigate pages, click elements, type text, take screenshots, manage tabs, handle cookies, and more.                              |
+| **MCP Server**| [Model Context Protocol](https://modelcontextprotocol.io/) server at `/mcp` on the same port. AI agents (Claude, etc.) can drive the browser directly over MCP using Streamable HTTP.      |
 
 Pre-installed extensions: **uBlock Origin** (ads/trackers), **LocalCDN** (prevents CDN tracking), **ClearURLs** (strips tracking params), **Consent-O-Matic** (auto-handles cookie popups).
 
@@ -62,12 +63,21 @@ See [docs/api.md](docs/api.md) for all actions and the full API reference.
 ## Table of Contents
 
 - [Two Input Modes](#two-input-modes)
+- [MCP Server](#mcp-server)
 - [Script Mode](#script-mode)
 - [Page Loaders](#page-loaders)
 - [Cluster Mode](#cluster-mode)
 - [Configuration](#configuration)
 - [Bot Detection Results](#bot-detection-results)
 - [License](#license)
+
+## MCP Server
+
+AI agents can control the browser over the [Model Context Protocol](https://modelcontextprotocol.io/) via Streamable HTTP at `/mcp` on the same port 8080. All browser actions are exposed as MCP tools — navigation, screenshots, clicking, typing, JavaScript evaluation, cookies, and more.
+
+Connect any MCP-compatible client (Claude Desktop, Claude Code, custom agents) to `http://localhost:8080/mcp/` and start browsing.
+
+Works in both standalone and [cluster mode](#cluster-mode) — HAProxy routes MCP traffic with the same sticky sessions as the HTTP API.
 
 ## Two Input Modes
 
@@ -95,9 +105,11 @@ Full docs: [docs/page-loaders.md](docs/page-loaders.md)
 
 ## Cluster Mode
 
-Run 10 browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync. One `docker compose` command:
+Run 10 browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync. Download the compose file and HAProxy config, then start:
 
 ```bash
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
 docker compose -f docker-compose.cluster.yml up -d
 ```
 

@@ -12,10 +12,12 @@ Run a fleet of browser instances behind HAProxy with automatic queuing, sticky s
 ## Quick Start
 
 ```bash
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
+curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
 docker compose -f docker-compose.cluster.yml up -d
 ```
 
-This starts Redis, 10 browser containers, and the HAProxy queue-proxy. The entry point is `http://localhost:8080` — same API as the single-container mode.
+This starts Redis, 10 browser containers, and the HAProxy queue-proxy. The entry point is `http://localhost:8080` — same API as the single-container mode. The MCP endpoint at `/mcp/` also works through the proxy with the same sticky session routing.
 
 ### Scale Up
 
@@ -61,7 +63,7 @@ HAProxy sets an `INSTANCEID` cookie on every response, containing the name of th
 
 **Not sending `INSTANCEID` is intentional for self-contained requests.** If you POST a full script — navigate to a site, type something, press enter, get the HTML — HAProxy picks any free browser and the whole thing happens in one shot. You don't care which instance handled it, and not sending the cookie means you get proper load balancing across the fleet.
 
-**Send `INSTANCEID` when you have ongoing state across separate requests.** If you logged in on a browser and need to continue the session across multiple API calls, send the cookie back so HAProxy routes you to the same instance every time. The browser's tab state, local variables, and any non-synced storage live in that specific container.
+**Send `INSTANCEID` when you make more than one request.** Each browser container is a full, stateful browser — open tabs, DOM state, JS variables, scroll position, local storage, everything lives in that specific container. If your second request depends on anything your first request did (navigated to a page, typed in a field, opened a tab), you need to route back to the same instance. The only thing that syncs across instances automatically is cookies (via Redis).
 
 **Let HAProxy assign an instance, then stick to it:**
 
@@ -101,12 +103,17 @@ This means an auth session (like a login cookie) set on `browser1` is immediatel
 
 **Practical consequence:** run a single login sequence on any instance, and the whole fleet is authenticated.
 
+Redis uses append-only file (AOF) persistence with a named volume, so synced cookies survive Redis restarts and `docker compose down`/`up` cycles.
+
 ## docker-compose.cluster.yml Overview
 
 ```yaml
 services:
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
 
   browser:
     image: psyb0t/stealthy-auto-browse:latest
@@ -115,6 +122,13 @@ services:
       - TZ=${TZ:-America/New_York}
       - REDIS_URL=redis://redis:6379
       # - PROXY_URL=http://user:pass@host:port
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+    memswap_limit: 8g
 
   queue-proxy:
     image: haproxy:lts-alpine
@@ -125,5 +139,7 @@ services:
       - "8080:8080"
       - "8081:8081"
 ```
+
+Each browser container is limited to 512MB RAM with 8GB swap available. This prevents a single instance from consuming all host memory while allowing swap for peak usage.
 
 All services share a `browse` Docker network. Browser containers are not exposed directly — all traffic goes through the queue-proxy.

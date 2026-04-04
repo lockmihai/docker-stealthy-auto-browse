@@ -51,7 +51,7 @@ post() {
 assert_success() {
     local resp="$1"
     local name="$2"
-    if ! echo "$resp" | grep -q '"success": true'; then
+    if ! echo "$resp" | grep -qE '"success":\s*true'; then
         echo "  FAIL: $name: $resp"
         return 1
     fi

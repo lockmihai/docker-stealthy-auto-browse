@@ -20,6 +20,9 @@
 services:
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
     networks:
       - browse
 
@@ -30,6 +33,13 @@ services:
       - TZ=${TZ:-America/New_York}
       - REDIS_URL=redis://redis:6379
       # - PROXY_URL=http://user:pass@host:port
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+    memswap_limit: 8g
     depends_on:
       - redis
     networks:
@@ -55,6 +65,9 @@ services:
       - browser
     networks:
       - browse
+
+volumes:
+  redis-data:
 
 networks:
   browse:

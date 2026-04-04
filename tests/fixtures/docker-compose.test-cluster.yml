@@ -22,6 +22,13 @@ services:
     environment:
       - TZ=America/New_York
       - REDIS_URL=redis://redis:6379
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+    memswap_limit: 8g
     depends_on:
       - redis
     networks:

@@ -14,6 +14,7 @@
 #   8. sessionStorage is per-instance (NOT synced — expected behavior)
 #   9. Queue-proxy health endpoint
 #  10. 20 concurrent requests via queue-proxy all succeed
+#  10b. 500 concurrent requests via queue-proxy (stress test)
 #  11. HAProxy sticky session via INSTANCEID cookie
 
 test_cluster() {(
@@ -544,6 +545,34 @@ print(','.join(missing) if missing else 'none')
     _check "6.3 all 20 concurrent requests via queue-proxy succeeded" "$([ "$CONC_FAIL" -eq 0 ] && [ "$CONC_PASS" -eq 20 ] && echo true || echo false)"
 
     log_dbg "  queue stats after concurrent test: $(_get "${QBASE}/__queue/status")"
+
+    log "Test 6.35 — 500 concurrent requests via queue-proxy (stress test)"
+
+    local STRESS_RESULTS_FILE="/tmp/sab-cluster-test-stress.txt"
+    > "$STRESS_RESULTS_FILE"
+    local STRESS_PIDS=()
+
+    for i in $(seq 1 500); do
+        (
+            local resp ok
+            resp=$(curl -sf --max-time 300 -X POST "$QBASE" \
+                -H 'Content-Type: application/json' -d '{"action":"ping"}' 2>/dev/null || echo '{}')
+            ok=$(echo "$resp" | _jsok)
+            echo "$ok" >> "$STRESS_RESULTS_FILE"
+        ) &
+        STRESS_PIDS+=($!)
+    done
+    log_dbg "  launched 500 concurrent requests, waiting for completion..."
+    for pid in "${STRESS_PIDS[@]}"; do wait "$pid" || true; done
+
+    local STRESS_TOTAL STRESS_PASS STRESS_FAIL
+    STRESS_TOTAL=$(wc -l < "$STRESS_RESULTS_FILE")
+    STRESS_PASS=$(grep -c "^true$" "$STRESS_RESULTS_FILE" || echo 0)
+    STRESS_FAIL=$((STRESS_TOTAL - STRESS_PASS))
+    log_dbg "  stress results: $STRESS_PASS/$STRESS_TOTAL succeeded, $STRESS_FAIL failed"
+    _check "6.35 all 500 concurrent requests via queue-proxy succeeded ($STRESS_PASS/$STRESS_TOTAL)" \
+        "$([ "$STRESS_FAIL" -eq 0 ] && [ "$STRESS_PASS" -eq 500 ] && echo true || echo false)"
+
     _dump_proxy_logs
 
     log "Test 6.4 — queue-proxy goto + get_text returns real page content"
