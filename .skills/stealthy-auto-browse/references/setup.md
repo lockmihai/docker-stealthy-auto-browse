@@ -32,7 +32,7 @@ Port 8080 is the HTTP API. Port 5900 is a noVNC web viewer.
 | `USE_VIEWPORT` | `false` | Playwright viewport control. Required for width < ~450px. Reduces stealth. |
 | `HTTP_LISTEN_HOST` | `0.0.0.0` | HTTP API bind address. |
 | `HTTP_LISTEN_PORT` | `8080` | HTTP API port. |
-| `AUTH_TOKEN` | — | If set, all requests (except `/health`) require `Authorization: Bearer <key>`. |
+| `AUTH_TOKEN` | — | If set, all requests (except `/health`) require `Authorization: Bearer <key>` or `?auth_token=<key>` query param. |
 | `VNC_LISTEN_HOST` | `0.0.0.0` | VNC bind address. |
 | `VNC_LISTEN_PORT` | `5900` | noVNC web viewer port. |
 

@@ -44,6 +44,10 @@ If `AUTH_TOKEN` is set on the server, include it on every request (except `/heal
 Authorization: Bearer <key>
 ```
 
+Or pass it as a query param: `?auth_token=<key>` (useful for MCP clients that can't set headers).
+
+In single-instance mode, requests are serialized automatically — only one runs at a time, the rest queue up.
+
 Every response:
 
 ```json
@@ -271,6 +275,23 @@ Capture `console.log`, `console.error`, `console.warn`, etc. Each entry has `typ
 
 Call `calibrate` after fullscreen changes.
 
+### Multi-Step Scripts
+
+Run multiple actions as one atomic request. Steps with `output_id` collect results.
+
+```json
+{"action": "run_script", "steps": [
+    {"action": "goto", "url": "https://example.com", "wait_until": "domcontentloaded"},
+    {"action": "sleep", "duration": 2},
+    {"action": "get_text", "output_id": "text"},
+    {"action": "eval", "expression": "document.title", "output_id": "title"}
+]}
+```
+
+Also accepts `"yaml": "..."` with the same YAML format used in script mode.
+
+`on_error`: `"stop"` (default) or `"continue"`.
+
 ### Utility
 
 ```json
@@ -294,7 +315,9 @@ The browser exposes all actions as MCP tools via Streamable HTTP at `/mcp/` on t
 http://localhost:8080/mcp/
 ```
 
-Connect any MCP-compatible client to that URL. All actions from the HTTP API are available as tools — `goto`, `screenshot`, `system_click`, `system_type`, `eval_js`, `get_text`, `get_cookies`, `browser_action` (generic fallback for everything else), and more.
+Connect any MCP-compatible client to that URL. All actions from the HTTP API are available as tools — `goto`, `screenshot`, `system_click`, `system_type`, `eval_js`, `get_text`, `get_cookies`, `run_script` (multi-step), `browser_action` (generic fallback for everything else), and more.
+
+If `AUTH_TOKEN` is set, connect to `http://localhost:8080/mcp/?auth_token=<key>`.
 
 Works in both standalone and cluster mode — HAProxy routes MCP traffic with the same sticky sessions.
 
