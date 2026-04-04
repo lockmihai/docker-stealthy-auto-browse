@@ -4,7 +4,7 @@ Run a fleet of browser instances behind HAProxy with automatic queuing, sticky s
 
 ## What You Get
 
-- **10 browser containers** (configurable) behind a single entry point on port 8080
+- **Multiple browser containers** (default 10, configurable via `MAX_CONCURRENT`) behind a single entry point on port 8080
 - **HAProxy queue-proxy** that holds incoming requests when all instances are busy, instead of returning errors
 - **Sticky sessions** via `INSTANCEID` cookie — once a client is routed to a browser instance, it stays there
 - **Redis cookie sync** — cookies set on one instance propagate to all others via PubSub. New instances joining the cluster load existing cookies from Redis on startup

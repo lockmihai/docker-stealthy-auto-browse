@@ -11,6 +11,20 @@
 | `/health`             | GET    | Returns `ok` when the browser is ready                   |
 | `/mcp/`               | POST   | MCP (Model Context Protocol) Streamable HTTP endpoint    |
 
+## Authentication
+
+If `AUTH_TOKEN` is set, all requests (except `/health`) require authentication:
+
+```
+Authorization: Bearer <token>
+```
+
+Or pass it as a query param: `?auth_token=<token>` (useful for MCP clients that can't set headers).
+
+## Request Serialization
+
+In single-instance mode, only one request runs at a time. Additional requests queue up and execute sequentially. `/health` and `/state` are never blocked.
+
 ## Request / Response Format
 
 **Command format:**
@@ -217,6 +231,7 @@ Capture `console.log`, `console.error`, `console.warn`, and other console output
 
 | Action            | Parameters                                                  | What It Does                                                                                                                                                                                                                                 |
 | ----------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run_script`      | `steps` or `yaml`, `name`, `on_error`                       | Execute multiple actions as a single atomic request. `steps`: list of action dicts. `yaml`: inline YAML string (same format as `--script` mode). `on_error`: `"stop"` (default) or `"continue"`. Steps with `output_id` collect results.     |
 | `ping`            | —                                                           | Health check that returns `"pong"` and the current page URL.                                                                                                                                                                                 |
 | `sleep`           | `duration`                                                  | Pauses for N seconds. Prefer `wait_for_element` or `wait_for_text` when waiting for page content.                                                                                                                                            |
 | `close`           | —                                                           | Shuts down the browser. The container stops after this.                                                                                                                                                                                      |
