@@ -32,7 +32,7 @@ backend mcp
     stick-table type string len 64 size 200 expire 1h
     stick match req.hdr(Mcp-Session-Id)
     stick store-response res.hdr(Mcp-Session-Id)
-    server-template browser ${MAX_CONCURRENT} browser:8080 resolvers docker check maxconn 1
+    server-template browser ${MAX_CONCURRENT} browser:8080 resolvers docker check
 
 backend browsers
     balance leastconn
