@@ -15,7 +15,18 @@ from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image
 from mcp.types import TextContent
 
-mcp = FastMCP("stealthy-auto-browse")
+mcp = FastMCP(
+    "stealthy-auto-browse",
+    instructions=(
+        "Stealth browser automation in Docker. Camoufox (custom Firefox) with "
+        "zero Chrome DevTools Protocol exposure and real OS-level mouse/keyboard "
+        "input via PyAutoGUI — undetectable by bot detection. "
+        "Use system_click/system_type/send_key for stealth interactions. "
+        "Use get_interactive_elements to find clickable elements with coordinates. "
+        "Use run_script to execute multi-step workflows atomically. "
+        "Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and all major bot detectors."
+    ),
+)
 
 _dispatch: Callable[[dict], Coroutine[Any, Any, dict]] | None = None
 _lock: asyncio.Lock | None = None

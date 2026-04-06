@@ -146,6 +146,12 @@ curl -H "Authorization: Bearer mysecretkey" http://localhost:8080 ...
 # MCP endpoint: http://localhost:8080/mcp/?auth_token=mysecretkey
 ```
 
+## Examples
+
+See [`.agents/.skills/stealthy-auto-browse/scripts/`](.agents/.skills/stealthy-auto-browse/scripts/) for ready-to-use scripts:
+
+- **[`websearch.py`](.agents/.skills/stealthy-auto-browse/scripts/websearch.py)** — Multi-engine parallel web search (Brave, Google, Bing) with structured results and AI overview extraction. Outputs JSON with title, URL, and snippet for each result.
+
 ## Configuration
 
 Full environment variables table, proxy setup, persistent profiles, browser extensions, and VNC access: [docs/configuration.md](docs/configuration.md)

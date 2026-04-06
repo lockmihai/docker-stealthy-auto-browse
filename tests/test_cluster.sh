@@ -16,6 +16,7 @@
 #  10. 20 concurrent requests via queue-proxy all succeed
 #  10b. 500 concurrent requests via queue-proxy (stress test)
 #  11. HAProxy sticky session via INSTANCEID cookie
+#  12. MCP full handshake through HAProxy (init, list tools, goto, get_text)
 
 test_cluster() {(
     set -euo pipefail
@@ -622,6 +623,134 @@ print(','.join(missing) if missing else 'none')
         log_warn "7.2 skipped — no INSTANCEID cookie received"
     fi
     _dump_proxy_logs
+
+    # ============================================================
+    # PHASE 7.5: MCP through HAProxy
+    # ============================================================
+
+    log_sep
+    log "Phase 7.5: MCP sessions through HAProxy"
+    log_sep
+
+    log "Test 7.5 — full MCP handshake via queue-proxy (init → list tools → call tool)"
+
+    local mcp_result
+    mcp_result=$(python3 - "$QBASE" "$TEST_PAGE" << 'PYEOF'
+import json, sys, urllib.request
+
+base_url = sys.argv[1]
+test_page = sys.argv[2]
+mcp_url = f"{base_url}/mcp/"
+session_id = None
+
+def mcp_request(id_num, method, params=None):
+    global session_id
+    body = {"jsonrpc": "2.0", "id": id_num, "method": method}
+    if params:
+        body["params"] = params
+    data = json.dumps(body).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    req = urllib.request.Request(mcp_url, data=data, headers=headers)
+    resp = urllib.request.urlopen(req, timeout=30)
+    session_id = resp.headers.get("mcp-session-id", session_id)
+    raw = resp.read().decode()
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    return None
+
+def mcp_notify(method):
+    body = {"jsonrpc": "2.0", "method": method}
+    data = json.dumps(body).encode()
+    headers = {"Content-Type": "application/json"}
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    req = urllib.request.Request(mcp_url, data=data, headers=headers)
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
+
+results = []
+
+# 1. Initialize
+try:
+    r = mcp_request(1, "initialize", {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "cluster-test", "version": "0.1"}
+    })
+    mcp_notify("notifications/initialized")
+    ok = session_id is not None and r is not None
+    results.append(("MCP init via proxy", ok, "" if ok else "no session"))
+except Exception as e:
+    results.append(("MCP init via proxy", False, str(e)))
+
+# 2. List tools (must route to same instance via session header)
+try:
+    r = mcp_request(2, "tools/list", {})
+    tools = r.get("result", {}).get("tools", [])
+    ok = len(tools) >= 15
+    results.append((f"MCP tools/list via proxy ({len(tools)} tools)", ok, ""))
+except Exception as e:
+    results.append(("MCP tools/list via proxy", False, str(e)))
+
+# 3. Call a tool (goto + get_text to prove browser works)
+try:
+    params = {"name": "goto", "arguments": {"url": test_page, "wait_until": "load"}}
+    r = mcp_request(3, "tools/call", params)
+    content = r.get("result", {}).get("content", [])
+    txt = ""
+    for c in content:
+        if c.get("type") == "text":
+            txt = c["text"]
+    ok = '"success": true' in txt or '"success":true' in txt
+    results.append(("MCP goto via proxy", ok, txt[:80] if not ok else ""))
+except Exception as e:
+    results.append(("MCP goto via proxy", False, str(e)))
+
+# 4. Call get_text to verify same browser instance
+try:
+    params = {"name": "get_text", "arguments": {}}
+    r = mcp_request(4, "tools/call", params)
+    content = r.get("result", {}).get("content", [])
+    txt = ""
+    for c in content:
+        if c.get("type") == "text":
+            txt = c["text"]
+    ok = "Submit" in txt
+    results.append(("MCP get_text via proxy (same instance)", ok, txt[:80] if not ok else ""))
+except Exception as e:
+    results.append(("MCP get_text via proxy", False, str(e)))
+
+print(json.dumps(results))
+PYEOF
+    ) || true
+
+    echo "$mcp_result" | python3 -c "
+import sys, json
+results = json.loads(sys.stdin.read())
+for name, ok, err in results:
+    if ok:
+        print(f'  OK: {name}')
+    else:
+        msg = f': {err}' if err else ''
+        print(f'  FAIL: {name}{msg}')
+" 2>/dev/null || true
+
+    local mcp_pass mcp_fail
+    mcp_pass=$(echo "$mcp_result" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(sum(1 for _,ok,_ in r if ok))" 2>/dev/null || echo 0)
+    mcp_fail=$(echo "$mcp_result" | python3 -c "import sys,json; r=json.loads(sys.stdin.read()); print(sum(1 for _,ok,_ in r if not ok))" 2>/dev/null || echo 0)
+    PASS=$((PASS + mcp_pass))
+    FAIL=$((FAIL + mcp_fail))
+
+    _check "7.5 MCP via proxy: $mcp_pass passed, $mcp_fail failed" "$([ "$mcp_fail" -eq 0 ] && echo true || echo false)"
 
     # ============================================================
     # PHASE 8: Final Redis state verification
