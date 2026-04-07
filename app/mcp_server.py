@@ -13,7 +13,10 @@ from typing import Any, Callable, Coroutine
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image
+from logger import get_logger
 from mcp.types import TextContent
+
+log = get_logger(__name__)
 
 mcp = FastMCP(
     "stealthy-auto-browse",
@@ -46,12 +49,20 @@ async def _call(action: str, **params: Any) -> dict:
     """Call dispatch_action with an action and params."""
     if not _dispatch:
         return {"success": False, "error": "Browser not ready"}
+    filtered = {k: v for k, v in params.items() if v is not None}
+    log.info(">> %s %s", action, filtered if filtered else "")
     cmd: dict[str, Any] = {"action": action}
-    cmd.update({k: v for k, v in params.items() if v is not None})
+    cmd.update(filtered)
     if _lock:
         async with _lock:
-            return await _dispatch(cmd)
-    return await _dispatch(cmd)
+            result = await _dispatch(cmd)
+    else:
+        result = await _dispatch(cmd)
+    if result.get("success", False):
+        log.info("<< %s OK", action)
+    else:
+        log.warning("<< %s FAIL: %s", action, result.get("error", "?"))
+    return result
 
 
 def _text_result(result: dict) -> str:

@@ -8,18 +8,12 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import yaml
+from logger import get_logger
 
-
-def _ts() -> str:
-    return datetime.now().strftime("%H:%M:%S")
-
-
-def _log(msg: str) -> None:
-    print(f"[{_ts()}] [script] {msg}", file=sys.stderr, flush=True)
+log = get_logger(__name__)
 
 
 def load_script(path: str) -> dict[str, Any]:
@@ -93,7 +87,7 @@ async def run_script(
     all_success = True
     start_time = time.time()
 
-    _log(f"Running: {name} ({len(steps)} steps)")
+    log.info(f"Running: {name} ({len(steps)} steps)")
 
     for i, raw_step in enumerate(steps):
         step = substitute_step_vars(raw_step)
@@ -101,7 +95,7 @@ async def run_script(
         output_id = step.get("output_id")
         step_start = time.time()
 
-        _log(f"  [{i + 1}/{len(steps)}] {action}")
+        log.info(f"  [{i + 1}/{len(steps)}] {action}")
 
         try:
             result = await dispatch_fn(step)
@@ -126,12 +120,12 @@ async def run_script(
         if not result.get("success", True):
             all_success = False
             err = result.get("error", "?")
-            _log(f"  [{i + 1}/{len(steps)}] FAILED: {err}")
+            log.warning("  [%d/%d] FAILED: %s", i + 1, len(steps), err)
             if on_error == "stop":
                 break
             continue
 
-        _log(f"  [{i + 1}/{len(steps)}] OK ({step_result['duration']}s)")
+        log.info(f"  [{i + 1}/{len(steps)}] OK ({step_result['duration']}s)")
 
     total_duration = round(time.time() - start_time, 3)
     num_executed = len(step_results)
@@ -147,7 +141,7 @@ async def run_script(
     if outputs:
         output["outputs"] = outputs
 
-    _log(
+    log.info(
         f"Done: {num_executed}/{len(steps)} steps in {total_duration}s"
         f" - {'OK' if all_success else 'FAILED'}"
     )

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
 from typing import Any
 
+from logger import get_logger
 from redis.asyncio import from_url as redis_from_url
 
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -22,7 +22,7 @@ KEY_PREFIX = "SABROWSE:"
 COOKIES_KEY = f"{KEY_PREFIX}COOKIES"
 UPDATE_CHANNEL = f"{KEY_PREFIX}UPDATE"
 
-logger = logging.getLogger("redis_sync")
+logger = get_logger(__name__)
 
 
 class RedisSync:

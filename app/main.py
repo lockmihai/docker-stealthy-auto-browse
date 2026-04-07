@@ -24,7 +24,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime
 from typing import Any
 
 import uvicorn
@@ -49,30 +48,23 @@ CONTENT_TYPE_IMAGE_PNG = "image/png"
 # =============================================================================
 
 
-_log_to_stderr = False
+from logger import get_logger
 
-
-def _ts() -> str:
-    return datetime.now().strftime("%H:%M:%S")
-
-
-def log(msg: str) -> None:
-    dest = sys.stderr if _log_to_stderr else sys.stdout
-    print(f"[{_ts()}] {msg}", flush=True, file=dest)
+log = get_logger(__name__)
 
 
 def log_request(action: str, params: dict | None = None) -> None:
     if params:
-        log(f">> {action} {params}")
+        log.info(">> %s %s", action, params)
     else:
-        log(f">> {action}")
+        log.info(">> %s", action)
 
 
 def log_response(success: bool, msg: str = "") -> None:
     if success:
-        log(f"<< OK {msg}" if msg else "<< OK")
+        log.info("<< OK %s", msg) if msg else log.info("<< OK")
     else:
-        log(f"<< FAIL {msg}" if msg else "<< FAIL")
+        log.warning("<< FAIL %s", msg) if msg else log.warning("<< FAIL")
 
 
 # =============================================================================
@@ -138,7 +130,7 @@ async def _on_dialog(dialog: Any) -> None:
         "default_value": dialog.default_value,
         "buttons": _DIALOG_BUTTONS.get(dialog.type, ["ok"]),
     }
-    log(f"Dialog [{dialog.type}]: {dialog.message}")
+    log.info(f"Dialog [{dialog.type}]: {dialog.message}")
 
     action = _next_dialog_action
     _next_dialog_action = None
@@ -171,7 +163,7 @@ async def _on_download(download: Any) -> None:
             "filename": download.suggested_filename,
             "path": None,
         }
-    log(f"Download: {download.suggested_filename}")
+    log.info(f"Download: {download.suggested_filename}")
 
 
 def _on_request(request: Any) -> None:
@@ -289,7 +281,7 @@ async def dispatch_action(cmd: dict) -> dict:
         return make_response(True, {"message": "pong", "url": url})
 
     if action == "close":
-        log("Shutting down...")
+        log.info("Shutting down...")
         asyncio.get_event_loop().call_soon(lambda: sys.exit(0))
         return make_response(True, {"message": "closing"})
 
@@ -557,7 +549,7 @@ async def dispatch_action(cmd: dict) -> dict:
         if not cmd.get("_from_loader"):
             loader = find_loader(loaders_dir, url)
             if loader:
-                log(f"Loader matched: {loader.name}")
+                log.info(f"Loader matched: {loader.name}")
                 return await execute_loader(loader, url)
 
         goto_kwargs: dict[str, Any] = {
@@ -827,12 +819,12 @@ async def execute_loader(loader, url: str) -> dict:
         # Mark goto steps from loaders to prevent infinite recursion
         if step.get("action") == "goto":
             step = {**step, "_from_loader": True}
-        log(f"  [{loader.name}] {step.get('action', '?')}")
+        log.info(f"  [{loader.name}] {step.get('action', '?')}")
         result = await dispatch_action(step)
         result.pop("_binary", None)
         results.append(result)
         if not result.get("success", True):
-            log(f"  [{loader.name}] Step failed: {result.get('error')}")
+            log.info(f"  [{loader.name}] Step failed: {result.get('error')}")
             break
     return make_response(
         True,
@@ -876,7 +868,7 @@ async def handle_command(request: Request) -> JSONResponse:
     try:
         cmd = await request.json()
     except Exception as e:
-        log(f"ERROR: Invalid JSON: {e}")
+        log.error(f" Invalid JSON: {e}")
         return JSONResponse(make_response(False, error=f"Invalid JSON: {e}"))
 
     action = cmd.get("action", "")
@@ -1014,13 +1006,17 @@ except ImportError:
 
 async def _run_script_mode(script_path: str, config: BrowserConfig) -> None:
     """Run a YAML script and exit."""
-    global _log_to_stderr, browser, loaders_dir
-    _log_to_stderr = True
+    global browser, loaders_dir
 
     # Capture real stdout for JSON output, redirect default stdout
     # to stderr so library warnings (Xlib etc) don't pollute JSON
     real_stdout = sys.stdout
     sys.stdout = sys.stderr
+
+    # Redirect logs to stderr so stdout stays clean for JSON
+    from logger import configure_output
+
+    configure_output(sys.stderr)
 
     # Still load loaders so goto steps can trigger them
     loaders_dir = os.environ.get("LOADERS_DIR", "/loaders")
@@ -1028,25 +1024,25 @@ async def _run_script_mode(script_path: str, config: BrowserConfig) -> None:
     try:
         script_data = load_script(script_path)
     except Exception as e:
-        log(f"Failed to load script: {e}")
+        log.info(f"Failed to load script: {e}")
         sys.exit(1)
 
-    log("Starting browser (script mode)")
+    log.info("Starting browser (script mode)")
 
     async with Browser(config) as b:
         browser = b
         await browser._get_page()
 
         system.init()
-        log("PyAutoGUI ready")
+        log.info("PyAutoGUI ready")
 
         await asyncio.sleep(1)
         page = get_active_page()
         if page:
             _setup_page_handlers(page)
             system.window_offset = await get_window_offset_js(page)
-        log(f"Window offset: {system.window_offset}")
-        log("Browser ready")
+        log.info(f"Window offset: {system.window_offset}")
+        log.info("Browser ready")
 
         result = await run_script(script_data, dispatch_action, real_stdout)
         sys.exit(0 if result["success"] else 1)
@@ -1065,30 +1061,30 @@ async def main() -> None:
     loaders_dir = os.environ.get("LOADERS_DIR", "/loaders")
     initial_loaders = load_loaders(loaders_dir)
     if initial_loaders:
-        log(f"Found {len(initial_loaders)} loader(s) in {loaders_dir}")
+        log.info(f"Found {len(initial_loaders)} loader(s) in {loaders_dir}")
 
-    log("Starting browser")
+    log.info("Starting browser")
 
     async with Browser(config) as b:
         browser = b
         await browser._get_page()
 
         system.init()
-        log("PyAutoGUI ready")
+        log.info("PyAutoGUI ready")
 
         await asyncio.sleep(1)
         page = get_active_page()
         if page:
             _setup_page_handlers(page)
             system.window_offset = await get_window_offset_js(page)
-        log(f"Window offset: {system.window_offset}")
+        log.info(f"Window offset: {system.window_offset}")
 
         # Register MCP dispatcher
         if _mcp_available:
             set_dispatcher(dispatch_action, _request_lock)
-            log("MCP server mounted at /mcp")
+            log.info("MCP server mounted at /mcp")
 
-        log("Browser ready")
+        log.info("Browser ready")
 
         uvi_config = uvicorn.Config(
             app,
@@ -1099,11 +1095,11 @@ async def main() -> None:
         )
         server = uvicorn.Server(uvi_config)
         if AUTH_TOKEN:
-            log("API key auth enabled")
-        log(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
+            log.info("API key auth enabled")
+        log.info(f"API listening on {HTTP_LISTEN_HOST}:{HTTP_LISTEN_PORT}")
         await server.serve()
 
-    log("Done")
+    log.info("Done")
 
 
 if __name__ == "__main__":
