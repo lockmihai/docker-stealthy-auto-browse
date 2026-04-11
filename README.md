@@ -116,11 +116,10 @@ Full docs: [docs/page-loaders.md](docs/page-loaders.md)
 
 ## Cluster Mode
 
-Run multiple browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync (default 10, configurable via `MAX_CONCURRENT`). Download the compose file and HAProxy config, then start:
+Run multiple browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync (default 10, configurable via `NUM_REPLICAS`). Download the compose file and HAProxy config, then start:
 
 ```bash
 curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
-curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
 docker compose -f docker-compose.cluster.yml up -d
 ```
 

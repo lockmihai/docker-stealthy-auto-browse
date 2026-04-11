@@ -84,11 +84,10 @@ Or via `~/.openclaw/openclaw.json`:
 
 ## Cluster Mode Setup
 
-Run multiple browser instances behind HAProxy with request queuing, sticky sessions, and Redis cookie sync. The number of instances is controlled by `MAX_CONCURRENT` (default: 10):
+Run multiple browser instances behind HAProxy with request queuing, sticky sessions, and Redis cookie sync. The number of instances is controlled by `NUM_REPLICAS` (default: 10):
 
 ```bash
 curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
-curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
 docker compose -f docker-compose.cluster.yml up -d
 ```
 

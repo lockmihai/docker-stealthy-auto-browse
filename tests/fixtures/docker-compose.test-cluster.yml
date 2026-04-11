@@ -39,18 +39,67 @@ services:
     user: root
     command: >-
       sh -c 'mkdir -p /var/run/haproxy &&
-      sed "s/\$${QUEUE_TIMEOUT}/$$QUEUE_TIMEOUT/g; s/\$${MAX_CONCURRENT}/$$MAX_CONCURRENT/g"
-      /tmp/haproxy.cfg.template > /tmp/haproxy.cfg &&
-      haproxy -f /tmp/haproxy.cfg'
-    volumes:
-      - ../../haproxy.cfg.template:/tmp/haproxy.cfg.template:ro
-    environment:
-      - QUEUE_TIMEOUT=120
-      - MAX_CONCURRENT=10
+      haproxy -f /etc/haproxy/haproxy.cfg'
+    configs:
+      - source: haproxy_cfg
+        target: /etc/haproxy/haproxy.cfg
     depends_on:
       - browser
     networks:
       - browse
+
+configs:
+  haproxy_cfg:
+    content: |
+      global
+          log stdout format raw local0 info
+          stats socket /var/run/haproxy/admin.sock mode 660 level admin expose-fd listeners
+
+      defaults
+          mode http
+          log global
+          option httplog
+          log-format "%ci:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %{+Q}r cook=%CC srv=%[srv_name]"
+          timeout connect 5s
+          timeout client 10m
+          timeout server 10m
+
+      resolvers docker
+          nameserver dns 127.0.0.11:53
+          hold valid 10s
+          hold refused 5s
+          accepted_payload_size 8192
+
+      frontend main
+          bind *:8080
+          capture cookie INSTANCEID len 64
+          http-request return status 200 content-type "application/json" string '{"status":"ok"}' if { path /__queue/health }
+          http-request return status 200 content-type "application/json" string '{"status":"ok","num_replicas":10}' if { path /__queue/status }
+          use_backend mcp if { path_beg /mcp }
+          default_backend browsers
+
+      backend mcp
+          balance leastconn
+          timeout queue 120s
+          stick-table type string len 64 size 200 expire 1h
+          stick match req.hdr(Mcp-Session-Id)
+          stick store-response res.hdr(Mcp-Session-Id)
+          server-template browser 10 browser:8080 resolvers docker check
+
+      backend browsers
+          balance leastconn
+          timeout queue 120s
+          stick-table type string len 64 size 200 expire 1h
+          stick match req.cook(INSTANCEID)
+          stick store-response srv_name
+          http-response add-header Set-Cookie "INSTANCEID=%[srv_name]; path=/"
+          server-template browser 10 browser:8080 resolvers docker check maxconn 1
+
+      listen stats
+          bind *:8081
+          stats enable
+          stats uri /
+          stats refresh 10s
 
 networks:
   browse:

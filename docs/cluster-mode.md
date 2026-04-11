@@ -4,7 +4,7 @@ Run a fleet of browser instances behind HAProxy with automatic queuing, sticky s
 
 ## What You Get
 
-- **Multiple browser containers** (default 10, configurable via `MAX_CONCURRENT`) behind a single entry point on port 8080
+- **Multiple browser containers** (default 10, configurable via `NUM_REPLICAS`) behind a single entry point on port 8080
 - **HAProxy queue-proxy** that holds incoming requests when all instances are busy, instead of returning errors
 - **Sticky sessions** via `INSTANCEID` cookie — once a client is routed to a browser instance, it stays there
 - **Redis cookie sync** — cookies set on one instance propagate to all others via PubSub. New instances joining the cluster load existing cookies from Redis on startup
@@ -13,7 +13,6 @@ Run a fleet of browser instances behind HAProxy with automatic queuing, sticky s
 
 ```bash
 curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/docker-compose.cluster.yml
-curl -LO https://raw.githubusercontent.com/psyb0t/docker-stealthy-auto-browse/main/haproxy.cfg.template
 docker compose -f docker-compose.cluster.yml up -d
 ```
 
@@ -22,9 +21,8 @@ This starts Redis, browser containers (10 by default), and the HAProxy queue-pro
 ### Scale Up
 
 ```bash
-# Scale to 20 instances (also update MAX_CONCURRENT to match)
-docker compose -f docker-compose.cluster.yml up -d --scale browser=20
-MAX_CONCURRENT=20 docker compose -f docker-compose.cluster.yml up -d queue-proxy
+# Scale to 20 instances
+NUM_REPLICAS=20 docker compose -f docker-compose.cluster.yml up -d
 ```
 
 ### Watch the Queue
@@ -39,7 +37,7 @@ docker compose -f docker-compose.cluster.yml logs -f queue-proxy
 | ---------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REDIS_URL`      | —                | Redis connection string. Set automatically in cluster mode (`redis://redis:6379`). Set this on standalone containers to join them to a Redis sync cluster. |
 | `QUEUE_TIMEOUT`  | `300`            | Seconds a request will wait in the queue before HAProxy returns a 503. Increase for long-running tasks.                                                   |
-| `MAX_CONCURRENT` | `10`             | Number of browser instances HAProxy expects. Must match the actual scale count. HAProxy uses this to build the server list.                               |
+| `NUM_REPLICAS`   | `10`             | Number of browser instances. Controls both the container replica count and HAProxy server list — single source of truth.                                  |
 | `TZ`             | `America/New_York` | Timezone for all browser instances. Set to match your IP's geographic location.                                                                         |
 
 ## HAProxy Queue-Proxy
@@ -117,27 +115,26 @@ services:
 
   browser:
     image: psyb0t/stealthy-auto-browse:latest
-    scale: 10
+    scale: ${NUM_REPLICAS:-10}
     environment:
       - TZ=${TZ:-America/New_York}
       - REDIS_URL=redis://redis:6379
-      # - PROXY_URL=http://user:pass@host:port
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-        reservations:
-          memory: 256m
-    memswap_limit: 8g
 
   queue-proxy:
     image: haproxy:lts-alpine
-    environment:
-      - QUEUE_TIMEOUT=${QUEUE_TIMEOUT:-300}
-      - MAX_CONCURRENT=${MAX_CONCURRENT:-10}
+    configs:
+      - source: haproxy_cfg
+        target: /etc/haproxy/haproxy.cfg
     ports:
       - "8080:8080"
       - "8081:8081"
+
+configs:
+  haproxy_cfg:
+    content: |
+      # HAProxy config with ${NUM_REPLICAS} and ${QUEUE_TIMEOUT}
+      # interpolated by Docker Compose — no template file needed
+      ...
 ```
 
 Each browser container is limited to 512MB RAM with 8GB swap available. This prevents a single instance from consuming all host memory while allowing swap for peak usage.

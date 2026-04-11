@@ -504,8 +504,8 @@ print(','.join(missing) if missing else 'none')
     log "Test 6.1 — queue-proxy /__queue/status"
     resp=$(_get "${QBASE}/__queue/status")
     local max_conc
-    max_conc=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('max_concurrent',0))" 2>/dev/null)
-    _assert_eq "$max_conc" "10" "6.1 queue-proxy max_concurrent=10"
+    max_conc=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('num_replicas',0))" 2>/dev/null)
+    _assert_eq "$max_conc" "10" "6.1 queue-proxy num_replicas=10"
     log_dbg "  queue status: $resp"
 
     log "Test 6.2 — queue-proxy /__queue/health"
