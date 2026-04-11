@@ -24,10 +24,12 @@ mcp = FastMCP(
         "Stealth browser automation in Docker. Camoufox (custom Firefox) with "
         "zero Chrome DevTools Protocol exposure and real OS-level mouse/keyboard "
         "input via PyAutoGUI — undetectable by bot detection. "
-        "Use system_click/system_type/send_key for stealth interactions. "
-        "Use get_interactive_elements to find clickable elements with coordinates. "
-        "Use run_script to execute multi-step workflows atomically. "
-        "Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and all major bot detectors."
+        "Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and all major bot detectors. "
+        "CLICKING: always use click() with a CSS selector first — it is fast and reliable. "
+        "Only use system_click() as a last resort when the site detects DOM event injection, "
+        "and only after calling calibrate() to ensure correct coordinate mapping. "
+        "Use get_interactive_elements to find selectors and coordinates. "
+        "Use run_script to execute multi-step workflows atomically."
     ),
 )
 
@@ -163,15 +165,17 @@ async def screenshot(
 
 @mcp.tool
 async def system_click(x: int, y: int, duration: float | None = None) -> str:
-    """Click at viewport coordinates with a human-like mouse movement.
+    """Click at viewport coordinates using real OS-level mouse movement.
 
-    The mouse moves along a curved path with random jitter before clicking.
-    Completely undetectable by bot detection. Get coordinates from
-    get_interactive_elements.
+    PREFER click() with a CSS selector instead — it is faster and more reliable.
+    Only use system_click when: (1) the site detects DOM event injection and
+    blocks it, or (2) you have already called calibrate and confirmed the window
+    offset is correct. Without calibration the coordinates will be wrong and
+    the click will land in the wrong place.
 
     Args:
-        x: Viewport X coordinate.
-        y: Viewport Y coordinate.
+        x: Viewport X coordinate (from get_interactive_elements).
+        y: Viewport Y coordinate (from get_interactive_elements).
         duration: Mouse movement time in seconds (random 0.2-0.6 if omitted).
     """
     return _text_result(await _call("system_click", x=x, y=y, duration=duration))
@@ -236,9 +240,10 @@ async def scroll(amount: int = -3, x: int | None = None, y: int | None = None) -
 
 @mcp.tool
 async def click(selector: str) -> str:
-    """Click an element by CSS selector or XPath.
+    """Click an element by CSS selector or XPath. PREFER THIS over system_click.
 
-    Faster than system_click but uses DOM event injection (detectable).
+    Reliable, fast, and works for the vast majority of sites. Only fall back to
+    system_click if the site explicitly detects and blocks DOM event injection.
     XPath example: "xpath=//button[@id='submit']".
 
     Args:

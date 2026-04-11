@@ -53,10 +53,10 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "get_text"}'
 
-# Click with real OS-level mouse movement (undetectable)
+# Click by CSS selector (preferred — fast and reliable)
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d '{"action": "system_click", "x": 500, "y": 300}'
+  -d '{"action": "click", "selector": "button#submit"}'
 
 # Screenshot
 curl "http://localhost:8080/screenshot/browser?whLargest=512" -o screenshot.png
@@ -172,6 +172,10 @@ Full environment variables table, proxy setup, persistent profiles, browser exte
 | [Fingerprint.com](https://fingerprint.com/demo/)                       | **Pass** | Identified as normal Firefox, no bot flags                              |
 
 Why it works: [docs/stealth.md](docs/stealth.md)
+
+## Known Issues / TODO
+
+- **`system_click` reliability** — OS-level mouse clicks can land in the wrong place if the window offset is stale. Needs a more robust coordinate mapping solution so it works reliably without manual `calibrate` calls.
 
 ## License
 

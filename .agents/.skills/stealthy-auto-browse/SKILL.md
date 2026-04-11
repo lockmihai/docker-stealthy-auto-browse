@@ -84,16 +84,19 @@ Uses Playwright's DOM events. Faster, uses CSS selectors/XPath, but detectable.
 
 ### Which To Use
 
-- **Bot detection?** System input. Always.
-- **No detection?** Playwright input is fine.
-- **Fill forms stealthily?** `system_click` to focus, then `system_type`.
+- **Clicking:** always try `click` with a CSS selector first — fast and reliable.
+  Only use `system_click` if the site detects DOM events and blocks them.
+  `system_click` requires `calibrate` first or coordinates will be wrong.
+- **Typing:** `fill` for inputs (fast). `system_type` for stealth when bot detection is active.
+- **No bot detection?** Playwright input (`click`, `fill`) is fine.
+- **Bot detection confirmed?** System input + `calibrate` first.
 
 ## Typical Workflow
 
 1. `goto` → load the page
 2. `get_text` → read what's on the page
-3. `get_interactive_elements` → find buttons/inputs with x,y coordinates
-4. `system_click` / `system_type` / `send_key` → interact
+3. `get_interactive_elements` → find buttons/inputs with selectors and x,y coords
+4. `click` (CSS selector) → interact; fall back to `system_click` only if needed
 5. `wait_for_element` / `wait_for_text` → wait for results
 6. `get_text` → verify
 
@@ -469,11 +472,12 @@ In cluster mode, each engine gets its own browser instance for true parallelism.
 
 ## Tips
 
-1. **Always `get_interactive_elements` before clicking** — don't guess coordinates
-2. **System input for stealth** — `system_click`, `system_type`, `send_key`
-3. **`get_text` first, screenshots second** — text is faster and smaller
-4. **Match TZ to IP location** — timezone mismatch is a detection signal
-5. **Resize screenshots with `?whLargest=512`** — full resolution is huge
+1. **Prefer `click` with CSS selector** — reliable and fast; use `system_click` only when site blocks DOM events
+2. **`calibrate` before `system_click`** — without it, coordinates are wrong and clicks miss
+3. **Always `get_interactive_elements` before clicking** — gets both selectors and coordinates
+4. **`get_text` first, screenshots second** — text is faster and smaller
+5. **Match TZ to IP location** — timezone mismatch is a detection signal
+6. **Resize screenshots with `?whLargest=512`** — full resolution is huge
 6. **Wait conditions over sleep** — `wait_for_element`, `wait_for_text`, `wait_for_url`
 7. **`handle_dialog` BEFORE the trigger** — dialogs are auto-accepted otherwise
 8. **`calibrate` after fullscreen** — coordinate mapping shifts

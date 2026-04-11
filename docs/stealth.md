@@ -31,10 +31,11 @@ These use Playwright's DOM automation to find elements by **CSS selector or XPat
 
 ### Which to Use
 
-- **Site has bot detection?** Use system input. Always.
-- **Just scraping something that doesn't fight back?** Playwright input is fine and easier.
-- **Filling forms on a protected site?** `system_click` to focus the field, then `system_type` to enter text.
-- **Have a CSS selector but no coordinates?** Use `click`. Have coordinates from `get_interactive_elements`? Use `system_click`.
+- **Default:** use `click` with a CSS selector. It's fast, reliable, and works for most sites.
+- **Site explicitly detects and blocks DOM event injection?** Fall back to system input.
+- **Using `system_click`?** Call `calibrate` first — without it the coordinates are offset and the click lands in the wrong place.
+- **Filling forms on a protected site?** `fill` first; if blocked, `system_click` to focus then `system_type`.
+- **Just scraping?** Playwright input (`click`, `fill`) is fine.
 
 ## Bot Detection Test Results
 

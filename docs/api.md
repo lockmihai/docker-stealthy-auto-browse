@@ -105,22 +105,22 @@ All actions are sent as `POST /` with JSON body `{"action": "name", ...params}`.
 | `goto`    | `url`, `wait_until`, `referer` | Navigate to a URL. `wait_until`: `"domcontentloaded"` (default), `"load"`, `"networkidle"`. `referer`: set the HTTP Referer header (useful for sites that check referrer). |
 | `refresh` | `wait_until` (optional)        | Reload the current page. Returns URL and title.                                                                                                                            |
 
-### System Input (OS-Level, Undetectable)
+### System Input (OS-Level, Undetectable — Last Resort)
 
 | Action         | Parameters           | What It Does                                                                                                                                                                                                                                      |
 | -------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system_click` | `x`, `y`, `duration` | Moves the mouse to viewport coordinates with a **human-like curved path** (random jitter, eased acceleration), then clicks. The primary way to click things when stealth matters. `duration` controls movement time (random 0.2-0.6s if omitted). |
+| `system_click` | `x`, `y`, `duration` | Moves the mouse to viewport coordinates with a **human-like curved path** (random jitter, eased acceleration), then clicks. **Last resort** — prefer `click` with a CSS selector. Only use this when the site detects DOM event injection. Requires `calibrate` to have been called first or coordinates will be wrong. `duration` controls movement time (random 0.2-0.6s if omitted). |
 | `mouse_move`   | `x`, `y`, `duration` | Moves the mouse with human-like movement but does **not** click. Use to hover over elements (trigger dropdown menus, tooltips) or simulate natural mouse behavior between actions.                                                                |
 | `mouse_click`  | `x`, `y` (optional)  | Clicks at a position or wherever the mouse currently is. Unlike `system_click`, this does **not** do the smooth mouse movement first — it's a direct click. Use after `mouse_move` when you want to separate movement and click.                  |
 | `system_type`  | `text`, `interval`   | Types text character-by-character via **real OS keystrokes**. Each key has a randomized delay (jittered around `interval`, default 0.08s) to mimic human typing speed. You must focus an input field first.                                       |
 | `send_key`     | `key`                | Sends a keyboard key or combo. Examples: `"enter"`, `"tab"`, `"escape"`, `"backspace"`, `"ctrl+a"`, `"ctrl+shift+t"`. Uses PyAutoGUI key names.                                                                                                   |
 | `scroll`       | `amount`, `x`, `y`   | Scrolls using the mouse wheel. **Negative = scroll down**, positive = scroll up. If `x`, `y` are provided, moves the mouse there first (useful for scrolling inside a specific element).                                                          |
 
-### Playwright Input (DOM Events, Detectable)
+### Playwright Input (DOM Events — Use These First)
 
 | Action  | Parameters                  | What It Does                                                                                                                                                              |
 | ------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `click` | `selector`                  | Clicks an element by CSS selector or XPath (`xpath=//button[@id='submit']`). Faster than `system_click` but uses Playwright's DOM event injection.                        |
+| `click` | `selector`                  | **Preferred click method.** Clicks an element by CSS selector or XPath (`xpath=//button[@id='submit']`). Fast and reliable. Only fall back to `system_click` if the site actively detects and blocks DOM event injection. |
 | `fill`  | `selector`, `value`         | Sets an input field's value instantly. Clears existing content first. Fast but doesn't generate individual keystroke events — detectable.                                 |
 | `type`  | `selector`, `text`, `delay` | Types into an element character-by-character via Playwright. Middle ground between `fill` (instant) and `system_type` (OS-level). `delay` defaults to 0.05s between keys. |
 
