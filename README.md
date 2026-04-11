@@ -58,7 +58,7 @@ curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
   -d '{"action": "click", "selector": "button#submit"}'
 
-# Screenshot
+# Screenshot (last resort — prefer get_text; always resize to save tokens)
 curl "http://localhost:8080/screenshot/browser?whLargest=512" -o screenshot.png
 ```
 

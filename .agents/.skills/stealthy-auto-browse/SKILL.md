@@ -472,12 +472,12 @@ In cluster mode, each engine gets its own browser instance for true parallelism.
 
 ## Tips
 
-1. **Prefer `click` with CSS selector** — reliable and fast; use `system_click` only when site blocks DOM events
-2. **`calibrate` before `system_click`** — without it, coordinates are wrong and clicks miss
-3. **Always `get_interactive_elements` before clicking** — gets both selectors and coordinates
-4. **`get_text` first, screenshots second** — text is faster and smaller
-5. **Match TZ to IP location** — timezone mismatch is a detection signal
-6. **Resize screenshots with `?whLargest=512`** — full resolution is huge
+1. **Read text, not pixels** — always try `get_text` or `get_html` first; screenshots are last resort
+2. **Screenshots: use `whLargest=512`** — full resolution wastes tokens; fine detail is rarely needed
+3. **Prefer `click` with CSS selector** — reliable and fast; use `system_click` only when site blocks DOM events
+4. **`calibrate` before `system_click`** — without it, coordinates are wrong and clicks miss
+5. **Always `get_interactive_elements` before clicking** — gets both selectors and coordinates
+6. **Match TZ to IP location** — timezone mismatch is a detection signal
 6. **Wait conditions over sleep** — `wait_for_element`, `wait_for_text`, `wait_for_url`
 7. **`handle_dialog` BEFORE the trigger** — dialogs are auto-accepted otherwise
 8. **`calibrate` after fullscreen** — coordinate mapping shifts

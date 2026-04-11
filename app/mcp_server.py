@@ -25,6 +25,11 @@ mcp = FastMCP(
         "zero Chrome DevTools Protocol exposure and real OS-level mouse/keyboard "
         "input via PyAutoGUI — undetectable by bot detection. "
         "Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and all major bot detectors. "
+        "READING PAGE CONTENT: always use get_text() or get_html() first — they are fast and "
+        "token-efficient. Only take a screenshot() when the page content cannot be understood "
+        "from text alone (e.g. visual layout, images, canvas). "
+        "SCREENSHOTS: always pass whLargest=512 unless fine detail is required — "
+        "full-resolution screenshots waste tokens and provide no extra information for most tasks. "
         "CLICKING: always use click() with a CSS selector first — it is fast and reliable. "
         "Only use system_click() as a last resort when the site detects DOM event injection, "
         "and only after calling calibrate() to ensure correct coordinate mapping. "
@@ -138,11 +143,16 @@ async def screenshot(
 ) -> ToolResult:
     """Take a screenshot of the browser viewport or full desktop.
 
+    LAST RESORT — prefer get_text() or get_html() instead. Screenshots cost
+    significantly more tokens and are only needed when visual layout or images
+    matter. When you do take a screenshot, always use whLargest=512 unless you
+    specifically need fine detail — full resolution is wasteful.
+
     Args:
         screenshot_type: "browser" for page viewport, "desktop" for full virtual screen.
         width: Resize to this width (keeps aspect ratio if height omitted).
         height: Resize to this height (keeps aspect ratio if width omitted).
-        whLargest: Resize so the largest dimension is this many pixels.
+        whLargest: Resize so the largest dimension is this many pixels. Use 512 by default.
     """
     result = await _call(
         "save_screenshot",
