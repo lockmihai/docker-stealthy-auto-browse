@@ -50,7 +50,7 @@ RUN mkdir -p /app /userdata /loaders && chown -R browser:browser /app /userdata 
 # Allow browser user to write GeoIP db into camoufox package dir
 RUN chown -R browser:browser /usr/local/lib/python3.12/site-packages/camoufox/
 
-# Switch to non-root user for camoufox fetch + extensions + runtime
+# Switch to non-root user for camoufox fetch + extensions
 USER browser
 
 # Download Camoufox browser (writes to ~/.cache/camoufox + GeoIP db to site-packages)
@@ -66,8 +66,14 @@ COPY --chown=browser:browser app/ /app/
 # Set working directory
 WORKDIR /app
 
-# Copy entrypoint
-COPY --chown=browser:browser --chmod=755 entrypoint.sh /entrypoint.sh
+# Install gosu for privilege dropping in entrypoint
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy entrypoint (runs as root, drops to target user)
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
 # Environment variables
 ENV XVFB_RESOLUTION=1920x1080
