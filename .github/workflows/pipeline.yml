@@ -9,7 +9,7 @@ jobs:
     with:
       repository_name: psyb0t/stealthy-auto-browse
       target_platforms: "linux/amd64,linux/arm64"
-      scan_enabled: false # TODO: re-enable when Debian/camoufox patch criticals
+      scan_severity: "high" # camoufox bundles Go 1.19 with unfixed criticals
 
     secrets:
       dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
