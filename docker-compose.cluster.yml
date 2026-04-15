@@ -88,7 +88,9 @@ configs:
           bind *:8080
           capture cookie INSTANCEID len 64
           http-request return status 200 content-type "application/json" string '{"status":"ok"}' if { path /__queue/health }
-          http-request return status 200 content-type "application/json" string '{"status":"ok","num_replicas":${NUM_REPLICAS:-10}}' if { path /__queue/status }
+          acl is_private src 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8
+          http-request return status 200 content-type "application/json" string '{"status":"ok","num_replicas":${NUM_REPLICAS:-10}}' if { path /__queue/status } is_private
+          http-request return status 403 content-type "application/json" string '{"error":"forbidden"}' if { path /__queue/status } !is_private
           use_backend mcp if { path_beg /mcp }
           default_backend browsers
 

@@ -49,7 +49,7 @@ HAProxy sits in front of all browser instances and enforces a concurrency limit 
 | Endpoint           | What It Does                                                            |
 | ------------------ | ----------------------------------------------------------------------- |
 | `/__queue/health`  | Returns `{"status":"ok"}` — use this for load balancer health checks.  |
-| `/__queue/status`  | Returns `{"status":"ok","max_concurrent":N}` — queue configuration.    |
+| `/__queue/status`  | Returns `{"status":"ok","num_replicas":N}` — **private networks only** (10.x, 172.16.x, 192.168.x, 127.x). Returns 403 from public IPs. |
 
 ### Stats Dashboard
 
