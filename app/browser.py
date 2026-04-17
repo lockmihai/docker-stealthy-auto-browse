@@ -400,7 +400,7 @@ class Browser:
             # Resize window to fill Xvfb screen using xdotool
             await asyncio.sleep(1)  # Wait for window to appear
             result = subprocess.run(
-                ["xdotool", "search", "--onlyvisible", "--name", ""],
+                ["xdotool", "search", "--onlyvisible", "--name", "Camoufox"],
                 capture_output=True,
                 text=True,
             )

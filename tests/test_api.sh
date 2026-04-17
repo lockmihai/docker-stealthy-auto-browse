@@ -99,8 +99,11 @@ test_calibrate() {
     assert_success "$resp" "calibrate" || return 1
     offset_x=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['window_offset']['x'])")
     offset_y=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['window_offset']['y'])")
-    # x should be 0 (no side chrome), y should be realistic chrome height (40-100px)
-    assert_eq "$offset_x" "0" "calibrate: offset x" || return 1
+    # x should be 0–1 (openbox may add a 1px border), y should be realistic chrome height (40-100px)
+    if [ "$offset_x" -gt 1 ]; then
+        echo "FAIL: calibrate: offset x=$offset_x outside expected range 0-1"
+        return 1
+    fi
     if [ "$offset_y" -lt 40 ] || [ "$offset_y" -gt 100 ]; then
         echo "FAIL: calibrate: offset y=$offset_y outside expected range 40-100"
         return 1

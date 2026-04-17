@@ -26,6 +26,7 @@ Passes Cloudflare, CreepJS, BrowserScan, Pixelscan, and every other bot detector
 | **Xvfb**       | Virtual framebuffer that lets the browser run with a full graphical display inside a container, no physical monitor needed. This matters because headless mode is another detection signal. |
 | **PyAutoGUI**  | Generates real OS-level mouse movements and keystrokes. The browser receives these as genuine user input — it has no idea it's being automated.                                             |
 | **noVNC**      | Web-based VNC client so you can watch the browser in real time from your own browser. Great for debugging and seeing exactly what's happening.                                              |
+| **Openbox**    | Lightweight window manager — adds title bars and resize handles to popup windows (OAuth dialogs, etc.) that would otherwise be too small to interact with. Zero stealth impact.             |
 | **HTTP API**   | A JSON API on port 8080 that lets you control everything — navigate pages, click elements, type text, take screenshots, manage tabs, handle cookies, and more.                              |
 | **MCP Server** | [Model Context Protocol](https://modelcontextprotocol.io/) server at `/mcp` on the same port. AI agents (Claude, etc.) can drive the browser directly over MCP using Streamable HTTP.       |
 

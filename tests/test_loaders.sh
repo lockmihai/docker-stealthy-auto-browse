@@ -3,25 +3,26 @@
 
 LOADER_FIXTURES="$WORKDIR/tests/fixtures/loaders"
 
-_loader_container_name="${CONTAINER_NAME}-loaders"
 _loader_base=""
+_loader_name=""
 
 _loader_setup() {
+    _loader_name="${CONTAINER_NAME}-loaders-$$-$RANDOM"
     local ip
-    ip=$(start_extra_container "$_loader_container_name" \
+    ip=$(start_extra_container "$_loader_name" \
         -v "$LOADER_FIXTURES:/loaders")
     _loader_base="http://${ip}:${INTERNAL_PORT}"
 
     if ! wait_for_api "$_loader_base" 90; then
         echo "FAIL: loader setup: API not ready"
-        docker logs "$_loader_container_name" 2>&1 | tail -20
-        stop_extra_container "$_loader_container_name"
+        docker logs "$_loader_name" 2>&1 | tail -20
+        stop_extra_container "$_loader_name"
         return 1
     fi
 }
 
 _loader_teardown() {
-    stop_extra_container "$_loader_container_name"
+    stop_extra_container "$_loader_name"
 }
 
 test_loader_match() {

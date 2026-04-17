@@ -12,6 +12,7 @@ WEB_BASE=""
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTDATA_DIR="$WORKDIR/.testdata"
 FIXTURES_DIR="$WORKDIR/tests/fixtures"
+RESULTS_DIR="$WORKDIR/tests/results"
 
 # Track extra containers for cleanup
 EXTRA_CONTAINERS=()
@@ -142,6 +143,9 @@ setup() {
     # Prepare testdata dir
     rm -rf "$TESTDATA_DIR" 2>/dev/null || true
     mkdir -p "$TESTDATA_DIR"
+
+    # Prepare results dir
+    mkdir -p "$RESULTS_DIR"
 
     # Build test image
     echo "Building test image..."

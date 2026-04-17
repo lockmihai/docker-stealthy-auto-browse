@@ -76,6 +76,10 @@ Want to add more? Mount a persistent profile and install them through the browse
 3. Navigate to `about:addons` and install whatever you want
 4. Extensions persist across restarts via the profile volume
 
+## Window Manager
+
+Openbox runs by default as the X11 window manager. This adds title bars and resize handles to popup windows (e.g. OAuth login dialogs) that would otherwise be too small to interact with. No stealth impact — the WM operates at the X11 display level, not the browser fingerprint level. Visible through VNC.
+
 ## VNC Access
 
 Watch the browser in real-time through your web browser. The VNC viewer auto-connects when you open it.

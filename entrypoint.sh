@@ -104,6 +104,10 @@ if [ -z "$DISPLAY" ] || [ "$DISPLAY" = ":99" ]; then
             xrandr -s "$MODE_NAME" 2>/dev/null || true
         fi
     fi
+    # Start window manager (title bars + resize handles for popup windows)
+    openbox &
+    PIDS+=($!)
+    sleep 0.3
 fi
 
 VNC_LISTEN_HOST="${VNC_LISTEN_HOST:-0.0.0.0}"

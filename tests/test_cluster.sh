@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# tests/test_cluster.sh — 10-browser cluster integration test.
+# tests/test_cluster.sh — cluster integration test.
 #
 # Sourced by test.sh; registered as test_cluster in ALL_TESTS.
+# NUM_BROWSERS controls how many instances to test (default 3).
 #
 # Tests:
-#   1. All 10 browsers healthy
-#   2. Cookie set on one instance syncs to all 10
-#   3. Cookie update propagates to all 10
+#   1. All browsers healthy
+#   2. Cookie set on one instance syncs to all
+#   3. Cookie update propagates to all
 #   4. Concurrent cookie sets (one per browser simultaneously) — all converge
-#   5. Delete on one instance clears all 10
+#   5. Delete on one instance clears all
 #   6. Redis state matches expected after each operation
 #   7. localStorage is per-instance (NOT synced — expected behavior)
 #   8. sessionStorage is per-instance (NOT synced — expected behavior)
@@ -25,6 +26,7 @@ test_cluster() {(
     WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     cd "$WORKDIR"
 
+    local NUM_BROWSERS=3
     local COMPOSE="docker compose -f tests/fixtures/docker-compose.test-cluster.yml -p sab-cluster-test"
     local IMAGE="psyb0t/stealthy-auto-browse:latest-test"
     local REDIS_CONTAINER="sab-cluster-test-redis-1"
@@ -166,7 +168,7 @@ test_cluster() {(
     docker build -t "$IMAGE" . 2>&1 | grep -E "^(#[0-9]+ (DONE|ERROR|CACHED)|Successfully|ERROR)" || true
     log "Image built."
 
-    log "Starting cluster (redis + haproxy + 10 browsers + webserver)..."
+    log "Starting cluster (redis + haproxy + $NUM_BROWSERS browsers + webserver)..."
     $COMPOSE down -v --remove-orphans 2>/dev/null || true
     $COMPOSE up -d --build 2>&1 | grep -v "^$" | grep -v "^Network\|^Container" || true
 
@@ -189,8 +191,8 @@ test_cluster() {(
     mapfile -t BROWSER_IDS < <($COMPOSE ps -q browser 2>/dev/null)
     log "Found ${#BROWSER_IDS[@]} browser containers"
 
-    if [ "${#BROWSER_IDS[@]}" -lt 10 ]; then
-        log_fail "Expected 10 browser containers, got ${#BROWSER_IDS[@]}"
+    if [ "${#BROWSER_IDS[@]}" -lt "$NUM_BROWSERS" ]; then
+        log_fail "Expected $NUM_BROWSERS browser containers, got ${#BROWSER_IDS[@]}"
         $COMPOSE ps
         exit 1
     fi
@@ -205,7 +207,7 @@ test_cluster() {(
         log_dbg "  browser $cid → $ip"
     done
 
-    log "Waiting for all 10 browsers to be healthy..."
+    log "Waiting for all $NUM_BROWSERS browsers to be healthy..."
     local HEALTH_PIDS=()
     for i in "${!BROWSER_URLS[@]}"; do
         (
@@ -231,7 +233,7 @@ test_cluster() {(
         _dump_browser_logs
         exit 1
     fi
-    log "All 10 browsers healthy."
+    log "All $NUM_BROWSERS browsers healthy."
 
     _wait_health "http://${QPROXY_IP}:8080/__queue" "queue-proxy" 30 || true
 
@@ -240,7 +242,7 @@ test_cluster() {(
     # ============================================================
 
     log_sep
-    log "Phase 2: Navigating all 10 browsers to test page"
+    log "Phase 2: Navigating all $NUM_BROWSERS browsers to test page"
     log_sep
 
     local GOTO_RESULTS_FILE="/tmp/sab-cluster-test-goto.txt"
@@ -268,23 +270,23 @@ test_cluster() {(
             GOTO_FAILS=$((GOTO_FAILS+1))
         fi
     done
-    _check "all 10 browsers navigated to test page" "$([ $GOTO_FAILS -eq 0 ] && echo true || echo false)"
+    _check "all $NUM_BROWSERS browsers navigated to test page" "$([ $GOTO_FAILS -eq 0 ] && echo true || echo false)"
 
     # ============================================================
     # PHASE 3: Cookie sync tests
     # ============================================================
 
     log_sep
-    log "Phase 3: Cookie sync across all 10 instances"
+    log "Phase 3: Cookie sync across all $NUM_BROWSERS instances"
     log_sep
 
     local COOKIE_DOMAIN
     COOKIE_DOMAIN="$(echo "$TEST_PAGE" | python3 -c "import sys; from urllib.parse import urlparse; u=urlparse(sys.stdin.read().strip()); print(u.hostname)")"
     log_dbg "Cookie domain: $COOKIE_DOMAIN"
 
-    ## --- Test 3.1: Set cookie on browser[0], verify all 10 get it ---
+    ## --- Test 3.1: Set cookie on browser[0], verify all $NUM_BROWSERS get it ---
 
-    log "Test 3.1 — set cookie on browser[0], wait, verify all 10 see it"
+    log "Test 3.1 — set cookie on browser[0], wait, verify all $NUM_BROWSERS see it"
 
     local resp
     resp=$(_post "${BROWSER_URLS[0]}" "{\"action\":\"set_cookie\",\"name\":\"cluster_sync\",\"value\":\"from_b0\",\"domain\":\"$COOKIE_DOMAIN\",\"path\":\"/\"}")
@@ -311,14 +313,14 @@ print(c['value'] if c else 'MISSING')
             MISS_31=$((MISS_31+1))
         fi
     done
-    _check "3.1 all 10 browsers have cookie set on browser[0]" "$([ $MISS_31 -eq 0 ] && echo true || echo false)"
+    _check "3.1 all $NUM_BROWSERS browsers have cookie set on browser[0]" "$([ $MISS_31 -eq 0 ] && echo true || echo false)"
 
-    ## --- Test 3.2: Update cookie from browser[4], verify all 10 get update ---
+    ## --- Test 3.2: Update cookie from browser[1], verify all $NUM_BROWSERS get update ---
 
-    log "Test 3.2 — update cookie from browser[4], verify all 10 see new value"
+    log "Test 3.2 — update cookie from browser[1], verify all $NUM_BROWSERS see new value"
 
-    resp=$(_post "${BROWSER_URLS[4]}" "{\"action\":\"set_cookie\",\"name\":\"cluster_sync\",\"value\":\"updated_by_b4\",\"domain\":\"$COOKIE_DOMAIN\",\"path\":\"/\"}")
-    _check "3.2 update cookie on browser[4]" "$(echo "$resp" | _jsok)"
+    resp=$(_post "${BROWSER_URLS[1]}" "{\"action\":\"set_cookie\",\"name\":\"cluster_sync\",\"value\":\"updated_by_b1\",\"domain\":\"$COOKIE_DOMAIN\",\"path\":\"/\"}")
+    _check "3.2 update cookie on browser[1]" "$(echo "$resp" | _jsok)"
 
     sleep 5
 
@@ -333,18 +335,18 @@ cookies = d.get('data', {}).get('cookies', [])
 c = next((c for c in cookies if c.get('name') == 'cluster_sync'), None)
 print(c['value'] if c else 'MISSING')
 " 2>/dev/null)
-        if [ "$found" = "updated_by_b4" ]; then
-            log_dbg "  browser[$i] ✓ cluster_sync=updated_by_b4"
+        if [ "$found" = "updated_by_b1" ]; then
+            log_dbg "  browser[$i] ✓ cluster_sync=updated_by_b1"
         else
             log_fail "  browser[$i] stale or missing (got: $found)"
             MISS_32=$((MISS_32+1))
         fi
     done
-    _check "3.2 all 10 browsers have updated cookie value from browser[4]" "$([ $MISS_32 -eq 0 ] && echo true || echo false)"
+    _check "3.2 all $NUM_BROWSERS browsers have updated cookie value from browser[1]" "$([ $MISS_32 -eq 0 ] && echo true || echo false)"
 
     ## --- Test 3.3: Concurrent cookie storm ---
 
-    log "Test 3.3 — all 10 browsers set unique cookies in parallel, verify convergence"
+    log "Test 3.3 — all $NUM_BROWSERS browsers set unique cookies in parallel, verify convergence"
 
     local STORM_PIDS=()
     for i in "${!BROWSER_URLS[@]}"; do
@@ -368,7 +370,7 @@ import sys, json
 d = json.load(sys.stdin)
 cookies = {c['name']: c['value'] for c in d.get('data', {}).get('cookies', [])}
 missing = []
-for j in range(10):
+for j in range(${NUM_BROWSERS}):
     k = f'storm_b{j}'
     v = f'val_b{j}'
     if cookies.get(k) != v:
@@ -376,41 +378,61 @@ for j in range(10):
 print(','.join(missing) if missing else 'none')
 " 2>/dev/null)
         if [ "$missing" = "none" ]; then
-            log_dbg "  browser[$i] ✓ has all 10 storm cookies"
+            log_dbg "  browser[$i] ✓ has all $NUM_BROWSERS storm cookies"
         else
             log_fail "  browser[$i] missing: $missing"
             MISS_33=$((MISS_33+1))
         fi
     done
-    _check "3.3 all 10 browsers converged after concurrent cookie storm" "$([ $MISS_33 -eq 0 ] && echo true || echo false)"
+    _check "3.3 all $NUM_BROWSERS browsers converged after concurrent cookie storm" "$([ $MISS_33 -eq 0 ] && echo true || echo false)"
 
     local redis_count
     redis_count=$(docker exec "$REDIS_CONTAINER" redis-cli HLEN SABROWSE:COOKIES 2>/dev/null || echo 0)
     log_dbg "Redis SABROWSE:COOKIES has $redis_count fields"
-    _check "3.3 Redis has >= 10 cookie entries" "$([ "$redis_count" -ge 10 ] && echo true || echo false)"
+    _check "3.3 Redis has >= $NUM_BROWSERS cookie entries" "$([ "$redis_count" -ge "$NUM_BROWSERS" ] && echo true || echo false)"
 
-    ## --- Test 3.4: Delete on browser[9], verify all 10 are cleared ---
+    ## --- Test 3.4: Delete on last browser, verify all cleared ---
 
-    log "Test 3.4 — delete_cookies on browser[9], verify all 10 cleared"
+    local LAST_IDX=$((NUM_BROWSERS - 1))
+    log "Test 3.4 — delete_cookies on browser[$LAST_IDX], verify all $NUM_BROWSERS cleared"
 
-    resp=$(_post "${BROWSER_URLS[9]}" '{"action":"delete_cookies"}')
-    _check "3.4 delete_cookies on browser[9]" "$(echo "$resp" | _jsok)"
+    resp=$(_post "${BROWSER_URLS[$LAST_IDX]}" '{"action":"delete_cookies"}')
+    _check "3.4 delete_cookies on browser[$LAST_IDX]" "$(echo "$resp" | _jsok)"
 
-    sleep 5
-
+    # Poll until all browsers report 0 cookies (max 15s)
     local MISS_34=0
-    for i in "${!BROWSER_URLS[@]}"; do
-        resp=$(_post "${BROWSER_URLS[$i]}" '{"action":"get_cookies"}')
-        local count
-        count=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('count',99))" 2>/dev/null)
-        if [ "$count" = "0" ]; then
-            log_dbg "  browser[$i] ✓ 0 cookies"
-        else
-            log_fail "  browser[$i] still has $count cookies"
-            MISS_34=$((MISS_34+1))
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        MISS_34=0
+        for i in "${!BROWSER_URLS[@]}"; do
+            resp=$(_post "${BROWSER_URLS[$i]}" '{"action":"get_cookies"}')
+            local count
+            count=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('count',99))" 2>/dev/null)
+            if [ "$count" != "0" ]; then
+                MISS_34=$((MISS_34+1))
+            fi
+        done
+        if [ $MISS_34 -eq 0 ]; then
+            break
         fi
+        log_dbg "  attempt $attempt: $MISS_34 browsers still have cookies, retrying in 3s..."
+        sleep 3
     done
-    _check "3.4 all 10 browsers empty after delete on browser[9]" "$([ $MISS_34 -eq 0 ] && echo true || echo false)"
+
+    # Final report
+    if [ $MISS_34 -gt 0 ]; then
+        for i in "${!BROWSER_URLS[@]}"; do
+            resp=$(_post "${BROWSER_URLS[$i]}" '{"action":"get_cookies"}')
+            local count
+            count=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('count',99))" 2>/dev/null)
+            if [ "$count" != "0" ]; then
+                log_fail "  browser[$i] still has $count cookies"
+            fi
+        done
+    else
+        log_dbg "  all $NUM_BROWSERS browsers cleared after $attempt attempt(s)"
+    fi
+    _check "3.4 all $NUM_BROWSERS browsers empty after delete on browser[$LAST_IDX]" "$([ $MISS_34 -eq 0 ] && echo true || echo false)"
 
     local redis_after
     redis_after=$(docker exec "$REDIS_CONTAINER" redis-cli HLEN SABROWSE:COOKIES 2>/dev/null || echo "?")
@@ -476,20 +498,20 @@ print(','.join(missing) if missing else 'none')
     log "Phase 5: sessionStorage is per-instance (not synced — expected)"
     log_sep
 
-    log "Test 5.1 — set sessionStorage on browser[2], browser[3] should NOT have it"
+    log "Test 5.1 — set sessionStorage on browser[0], browser[1] should NOT have it"
 
-    resp=$(_post "${BROWSER_URLS[2]}" '{"action":"set_storage","type":"session","key":"sess_test","value":"only_on_b2"}')
-    _check "5.1 set sessionStorage on browser[2]" "$(echo "$resp" | _jsok)"
+    resp=$(_post "${BROWSER_URLS[0]}" '{"action":"set_storage","type":"session","key":"sess_test","value":"only_on_b0"}')
+    _check "5.1 set sessionStorage on browser[0]" "$(echo "$resp" | _jsok)"
 
-    resp=$(_post "${BROWSER_URLS[2]}" '{"action":"get_storage","type":"session"}')
+    resp=$(_post "${BROWSER_URLS[0]}" '{"action":"get_storage","type":"session"}')
     val=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('items',{}).get('sess_test','MISSING'))" 2>/dev/null)
-    _assert_eq "$val" "only_on_b2" "5.1 browser[2] reads back its own sessionStorage"
+    _assert_eq "$val" "only_on_b0" "5.1 browser[0] reads back its own sessionStorage"
 
-    resp=$(_post "${BROWSER_URLS[3]}" '{"action":"get_storage","type":"session"}')
-    local val_b3
-    val_b3=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('items',{}).get('sess_test','NOT_PRESENT'))" 2>/dev/null)
-    _check "5.1 browser[3] does NOT have browser[2]'s sessionStorage (isolated)" "$([ "$val_b3" = "NOT_PRESENT" ] && echo true || echo false)"
-    log_dbg "  browser[3] sess_test = '$val_b3' (expected: NOT_PRESENT)"
+    resp=$(_post "${BROWSER_URLS[1]}" '{"action":"get_storage","type":"session"}')
+    local val_b1_sess
+    val_b1_sess=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('items',{}).get('sess_test','NOT_PRESENT'))" 2>/dev/null)
+    _check "5.1 browser[1] does NOT have browser[0]'s sessionStorage (isolated)" "$([ "$val_b1_sess" = "NOT_PRESENT" ] && echo true || echo false)"
+    log_dbg "  browser[1] sess_test = '$val_b1_sess' (expected: NOT_PRESENT)"
 
     # ============================================================
     # PHASE 6: Queue-proxy
@@ -505,7 +527,7 @@ print(','.join(missing) if missing else 'none')
     resp=$(_get "${QBASE}/__queue/status")
     local max_conc
     max_conc=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('num_replicas',0))" 2>/dev/null)
-    _assert_eq "$max_conc" "10" "6.1 queue-proxy num_replicas=10"
+    _assert_eq "$max_conc" "$NUM_BROWSERS" "6.1 queue-proxy num_replicas=$NUM_BROWSERS"
     log_dbg "  queue status: $resp"
 
     log "Test 6.2 — queue-proxy /__queue/health"

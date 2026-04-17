@@ -13,3 +13,6 @@ research_files
 reply.txt
 git-update.sh
 .claude
+lasttest.log
+tests/results/
+plan.md
