@@ -32,6 +32,7 @@ services:
     environment:
       - TZ=${TZ:-America/New_York}
       - REDIS_URL=redis://redis:6379
+      - NUM_REPLICAS=${NUM_REPLICAS:-10}
       # - PROXY_URL=http://user:pass@host:port
     deploy:
       resources:

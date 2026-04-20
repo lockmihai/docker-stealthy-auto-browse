@@ -95,7 +95,7 @@ AI agents can control the browser over the [Model Context Protocol](https://mode
 
 Connect any MCP-compatible client (Claude Desktop, Claude Code, custom agents) to `http://localhost:8080/mcp/` and start browsing.
 
-Works in both standalone and [cluster mode](#cluster-mode) — HAProxy routes MCP traffic with the same sticky sessions as the HTTP API.
+Works in both standalone and [cluster mode](#cluster-mode). In cluster mode (`NUM_REPLICAS > 1`), only `run_script` is exposed — all steps execute atomically on the same browser instance, preventing stale content from cross-instance routing.
 
 ## Script Mode
 

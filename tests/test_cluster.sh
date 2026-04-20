@@ -654,7 +654,7 @@ print(','.join(missing) if missing else 'none')
     log "Phase 7.5: MCP sessions through HAProxy"
     log_sep
 
-    log "Test 7.5 — full MCP handshake via queue-proxy (init → list tools → call tool)"
+    log "Test 7.5 — MCP through HAProxy (init, tools, run_script)"
 
     local mcp_result
     mcp_result=$(python3 - "$QBASE" "$TEST_PAGE" << 'PYEOF'
@@ -714,42 +714,51 @@ try:
 except Exception as e:
     results.append(("MCP init via proxy", False, str(e)))
 
-# 2. List tools (must route to same instance via session header)
+# 2. List tools
 try:
     r = mcp_request(2, "tools/list", {})
     tools = r.get("result", {}).get("tools", [])
-    ok = len(tools) >= 15
+    ok = len(tools) >= 1
     results.append((f"MCP tools/list via proxy ({len(tools)} tools)", ok, ""))
 except Exception as e:
     results.append(("MCP tools/list via proxy", False, str(e)))
 
-# 3. Call a tool (goto + get_text to prove browser works)
+# 3. run_script: goto + get_text (atomic, same instance guaranteed)
 try:
-    params = {"name": "goto", "arguments": {"url": test_page, "wait_until": "load"}}
+    params = {"name": "run_script", "arguments": {
+        "steps": [
+            {"action": "goto", "url": test_page, "wait_until": "load"},
+            {"action": "get_text", "output_id": "text"}
+        ]
+    }}
     r = mcp_request(3, "tools/call", params)
     content = r.get("result", {}).get("content", [])
     txt = ""
     for c in content:
         if c.get("type") == "text":
             txt = c["text"]
-    ok = '"success": true' in txt or '"success":true' in txt
-    results.append(("MCP goto via proxy", ok, txt[:80] if not ok else ""))
+    ok = "Submit" in txt and ('"success": true' in txt or '"success":true' in txt)
+    results.append(("MCP run_script goto+get_text", ok, txt[:120] if not ok else ""))
 except Exception as e:
-    results.append(("MCP goto via proxy", False, str(e)))
+    results.append(("MCP run_script goto+get_text", False, str(e)))
 
-# 4. Call get_text to verify same browser instance
+# 4. run_script: eval
 try:
-    params = {"name": "get_text", "arguments": {}}
+    params = {"name": "run_script", "arguments": {
+        "steps": [
+            {"action": "eval", "expression": "document.title", "output_id": "title"}
+        ]
+    }}
     r = mcp_request(4, "tools/call", params)
     content = r.get("result", {}).get("content", [])
     txt = ""
     for c in content:
         if c.get("type") == "text":
             txt = c["text"]
-    ok = "Submit" in txt
-    results.append(("MCP get_text via proxy (same instance)", ok, txt[:80] if not ok else ""))
+    ok = "Test Page" in txt and '"success": true' in txt
+    results.append(("MCP run_script eval", ok, txt[:120] if not ok else ""))
 except Exception as e:
-    results.append(("MCP get_text via proxy", False, str(e)))
+    results.append(("MCP run_script eval", False, str(e)))
 
 print(json.dumps(results))
 PYEOF
@@ -772,7 +781,7 @@ for name, ok, err in results:
     PASS=$((PASS + mcp_pass))
     FAIL=$((FAIL + mcp_fail))
 
-    _check "7.5 MCP via proxy: $mcp_pass passed, $mcp_fail failed" "$([ "$mcp_fail" -eq 0 ] && echo true || echo false)"
+    _check "7.5 MCP cluster mode: $mcp_pass passed, $mcp_fail failed" "$([ "$mcp_fail" -eq 0 ] && echo true || echo false)"
 
     # ============================================================
     # PHASE 8: Final Redis state verification

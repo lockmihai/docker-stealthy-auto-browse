@@ -112,6 +112,11 @@ HTTP_LISTEN_HOST = os.environ.get("HTTP_LISTEN_HOST", "0.0.0.0")
 HTTP_LISTEN_PORT = int(os.environ.get("HTTP_LISTEN_PORT", "8080"))
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip() or None
 
+_NUM_REPLICAS = int(os.environ.get("NUM_REPLICAS", "1"))
+_CLUSTER_MODE = _NUM_REPLICAS > 1
+_CLUSTER_ALLOWED_ACTIONS = {"run_script", "ping", "sleep"}
+
+
 # Parse CLI args: --script <path> (path provided by entrypoint from stdin)
 SCRIPT_PATH: str | None = None
 
@@ -872,6 +877,16 @@ async def handle_command(request: Request) -> JSONResponse:
         return JSONResponse(make_response(False, error=f"Invalid JSON: {e}"))
 
     action = cmd.get("action", "")
+
+    if _CLUSTER_MODE and action not in _CLUSTER_ALLOWED_ACTIONS:
+        return JSONResponse(make_response(
+            False,
+            error=(
+                f"Action '{action}' not available in cluster mode. "
+                "Use run_script to execute multiple actions atomically."
+            ),
+        ))
+
     params = {k: v for k, v in cmd.items() if k != "action"}
     log_request(action, params if params else None)
 
