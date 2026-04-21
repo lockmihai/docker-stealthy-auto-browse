@@ -322,13 +322,15 @@ Connect any MCP-compatible client to that URL. All actions from the HTTP API are
 
 If `AUTH_TOKEN` is set, connect to `http://localhost:8080/mcp/?auth_token=<key>`.
 
-Works in both standalone and cluster mode — HAProxy routes MCP traffic with the same sticky sessions.
+Works in both standalone and cluster mode. In cluster mode, only `run_script` is available (same restriction as HTTP API).
 
 ## Cluster Mode
 
 Run multiple browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync. For setup see [references/setup.md](references/setup.md).
 
 Entry point is `http://localhost:8080` — same API. HAProxy queues requests when all instances are busy instead of returning errors.
+
+**Script-only enforcement (v1.0.0+):** When `NUM_REPLICAS > 1`, both the HTTP API and MCP server only allow `run_script`, `ping`, and `sleep`. All other individual actions are rejected. Use `run_script` to bundle multiple actions into a single atomic request — one request = one routing decision = one browser instance handles the entire sequence. All actions remain available as steps inside `run_script`.
 
 **Sticky sessions:** HAProxy sets an `INSTANCEID` cookie. Send it back on subsequent requests to keep routing to the same browser instance. All browser state (tabs, DOM, JS, local storage) lives on that specific container — only cookies sync via Redis.
 
