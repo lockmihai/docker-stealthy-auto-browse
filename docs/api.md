@@ -21,6 +21,10 @@ Authorization: Bearer <token>
 
 Or pass it as a query param: `?auth_token=<token>` (useful for MCP clients that can't set headers).
 
+## Cluster Mode Restriction
+
+When running in cluster mode (`NUM_REPLICAS > 1`), only `run_script`, `ping`, and `sleep` actions are allowed. All other actions return an error directing you to use `run_script`. This prevents stale content bugs from calls hitting different browser instances. See [cluster-mode.md](cluster-mode.md#script-only-mode-v100) for details.
+
 ## Request Serialization
 
 In single-instance mode, only one request runs at a time. Additional requests queue up and execute sequentially. `/health` and `/state` are never blocked.

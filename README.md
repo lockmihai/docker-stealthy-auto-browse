@@ -95,7 +95,7 @@ AI agents can control the browser over the [Model Context Protocol](https://mode
 
 Connect any MCP-compatible client (Claude Desktop, Claude Code, custom agents) to `http://localhost:8080/mcp/` and start browsing.
 
-Works in both standalone and [cluster mode](#cluster-mode). In cluster mode (`NUM_REPLICAS > 1`), only `run_script` is exposed — all steps execute atomically on the same browser instance, preventing stale content from cross-instance routing.
+Works in both standalone and [cluster mode](#cluster-mode).
 
 ## Script Mode
 
@@ -125,6 +125,8 @@ docker compose -f docker-compose.cluster.yml up -d
 ```
 
 Cookies set on any instance propagate to all others instantly via Redis PubSub. Log in once, the whole fleet is authenticated.
+
+**Script-only enforcement (v1.0.0+):** When `NUM_REPLICAS > 1`, both the HTTP API and MCP server restrict to `run_script` only (plus `ping` and `sleep`). Individual actions are rejected to prevent stale content bugs from cross-instance routing. All actions remain available as steps inside `run_script`.
 
 Full docs: [docs/cluster-mode.md](docs/cluster-mode.md)
 

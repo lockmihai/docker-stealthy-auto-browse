@@ -8,6 +8,36 @@ Run a fleet of browser instances behind HAProxy with automatic queuing, sticky s
 - **HAProxy queue-proxy** that holds incoming requests when all instances are busy, instead of returning errors
 - **Sticky sessions** via `INSTANCEID` cookie — once a client is routed to a browser instance, it stays there
 - **Redis cookie sync** — cookies set on one instance propagate to all others via PubSub. New instances joining the cluster load existing cookies from Redis on startup
+- **Script-only enforcement** — both HTTP API and MCP restrict to `run_script` (plus `ping` and `sleep`) when `NUM_REPLICAS > 1`
+
+## Script-Only Mode (v1.0.0+)
+
+When `NUM_REPLICAS > 1`, individual actions like `goto`, `get_text`, `click` are **rejected** on both the HTTP API and MCP server. Only `run_script`, `ping`, and `sleep` are allowed.
+
+**Why:** Sequential calls (goto → get_text → click) may hit different browser instances if the client or MCP gateway doesn't maintain session stickiness (e.g., LiteLLM doesn't propagate the `Mcp-Session-Id` header between tool calls). This causes stale content bugs where `get_text` returns the previous page's content because it landed on a different instance that never navigated.
+
+**Solution:** `run_script` executes all steps atomically in a single HTTP request. One request = one routing decision = one browser instance handles the entire sequence. No session stickiness required.
+
+```bash
+# This works in cluster mode:
+curl -X POST http://localhost:8080 \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "action": "run_script",
+    "steps": [
+      {"action": "goto", "url": "https://example.com"},
+      {"action": "get_text", "output_id": "text"}
+    ]
+  }'
+
+# This is REJECTED in cluster mode:
+curl -X POST http://localhost:8080 \
+  -H 'Content-Type: application/json' \
+  -d '{"action": "goto", "url": "https://example.com"}'
+# → {"success": false, "error": "Action 'goto' not available in cluster mode. Use run_script to execute multiple actions atomically."}
+```
+
+The MCP server exposes only the `run_script` tool in cluster mode, with a comprehensive description documenting every available action and its parameters so LLMs know what steps to include in their scripts.
 
 ## Quick Start
 
