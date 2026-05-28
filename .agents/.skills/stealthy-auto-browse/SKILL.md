@@ -1,6 +1,6 @@
 ---
 name: stealthy-auto-browse
-description: Browser automation that passes CreepJS, BrowserScan, Pixelscan, and Cloudflare — zero CDP exposure, OS-level input, persistent fingerprints. Use when standard browser skills get 403s or CAPTCHAs.
+description: Headless-detection-resistant browser automation in Docker for authorized QA, compatibility testing, and defensive security research. Camoufox + OS-level input + persistent fingerprints. Use only with sites you own or have written authorization to test.
 homepage: https://github.com/psyb0t/docker-stealthy-auto-browse
 user-invocable: true
 metadata:
@@ -9,42 +9,62 @@ metadata:
 
 # stealthy-auto-browse
 
-Stealth browser in Docker. Camoufox (custom Firefox) — zero CDP signals. OS-level mouse/keyboard via PyAutoGUI — undetectable. Passes Cloudflare, DataDome, PerimeterX, Akamai.
+Browser automation in Docker built for QA against anti-bot stacks, compatibility testing of detection libraries (CreepJS, BrowserScan, Pixelscan, Cloudflare), and defensive security research where standard headless browsers produce false-positive blocks. Uses Camoufox (custom Firefox, no CDP signals) + PyAutoGUI for OS-level input.
 
 For installation, configuration, and container setup, see [references/setup.md](references/setup.md).
 
+## Authorized Use Only
+
+This tool is intentionally hard to fingerprint as automation. That makes it dangerous if misused. Only use it for:
+
+- Sites you own or operate
+- Sites you have **written authorization** to test (security engagements, bug bounty in-scope targets)
+- Your own anti-bot / fraud detection stack for QA and regression testing
+- Detection-library research in a controlled environment
+- Compatibility testing where legitimate automation is being misclassified as malicious
+
+**Do not** use this to evade access controls, scrape sites against their ToS, automate logged-in activity on accounts you don't own, abuse rate limits, or bypass CAPTCHAs you weren't authorized to bypass. Many jurisdictions criminalize unauthorized access regardless of technical means. The maintainers are not responsible for misuse.
+
+If you're unsure whether your use case is authorized, it isn't. Stop and get written permission first.
+
 ## When To Use
 
-- Site has bot detection (Cloudflare, CAPTCHAs, DataDome)
-- Another browser skill is getting 403s or blocked responses
-- You need a logged-in session that won't get banned
+- Validating that your own anti-bot rules behave correctly under realistic automation
+- Compatibility / regression testing where another headless browser is wrongly flagged
+- Authorized pentests / bug bounty on in-scope targets that require human-like interaction
+- Maintaining a stable test session against your own site or a sanctioned staging environment
 
 ## When NOT To Use
 
-- No bot protection — use `curl` or `WebFetch`
-- Only need static HTML — use `curl`
+- Any site you don't own or aren't explicitly authorized to test
+- Scraping content protected by ToS, paywalls, or rate limits
+- Driving real (non-test) user accounts on third-party services
+- Static HTML — use `curl` or `WebFetch`
+- Sites with no detection layer — use a normal browser skill
 
 ## Setup
 
 The API should already be running. Set the base URL:
 
 ```bash
-export STEALTHY_AUTO_BROWSE_URL=http://localhost:8080
+export STEALTHY_AUTO_BROWSE_URL=http://127.0.0.1:8080
 ```
 
 **Verify:** `curl $STEALTHY_AUTO_BROWSE_URL/health` returns `ok`.
+
+Recommended defaults: bind to `127.0.0.1`, set `AUTH_TOKEN` to a strong random value, do not expose port 5900 to anything beyond localhost, and pin the container image by digest. See [references/setup.md](references/setup.md).
 
 ## HTTP API
 
 All commands: `POST $STEALTHY_AUTO_BROWSE_URL/` with JSON body `{"action": "name", ...params}`.
 
-If `AUTH_TOKEN` is set on the server, include it on every request (except `/health`):
+**`AUTH_TOKEN` is required for any non-localhost deployment.** When set, include it on every request (except `/health`):
 
 ```
 Authorization: Bearer <key>
 ```
 
-Or pass it as a query param: `?auth_token=<key>` (useful for MCP clients that can't set headers).
+A query-param form (`?auth_token=<key>`) exists for MCP clients that can't set headers — avoid it for normal API calls because query strings end up in logs.
 
 In single-instance mode, requests are serialized automatically — only one runs at a time, the rest queue up.
 
@@ -61,9 +81,9 @@ Every response:
 
 ## Two Input Modes
 
-### System Input — Undetectable
+### System Input — OS-Level Events
 
-Uses PyAutoGUI for real OS-level events. The browser has no idea it's automated.
+Uses PyAutoGUI for real OS-level mouse/keyboard events. The browser doesn't see synthetic DOM events. Use only for legitimate detection-stack testing where DOM-event automation is incorrectly blocked.
 
 - `system_click` — move mouse with human-like curve, then click (viewport x,y coords)
 - `mouse_move` — move mouse without clicking (hover menus, tooltips)
@@ -74,9 +94,9 @@ Uses PyAutoGUI for real OS-level events. The browser has no idea it's automated.
 
 Get viewport coordinates from `get_interactive_elements`.
 
-### Playwright Input — Detectable But Convenient
+### Playwright Input — DOM Events
 
-Uses Playwright's DOM events. Faster, uses CSS selectors/XPath, but detectable.
+Uses Playwright's DOM events. Faster, uses CSS selectors/XPath, distinguishable as automation.
 
 - `click` — click by selector
 - `fill` — set input value instantly
@@ -85,18 +105,18 @@ Uses Playwright's DOM events. Faster, uses CSS selectors/XPath, but detectable.
 ### Which To Use
 
 - **Clicking:** always try `click` with a CSS selector first — fast and reliable.
-  Only use `system_click` if the site detects DOM events and blocks them.
+  Only fall back to `system_click` if your authorized test target requires OS-level input.
   `system_click` requires `calibrate` first or coordinates will be wrong.
-- **Typing:** `fill` for inputs (fast). `system_type` for stealth when bot detection is active.
-- **No bot detection?** Playwright input (`click`, `fill`) is fine.
-- **Bot detection confirmed?** System input + `calibrate` first.
+- **Typing:** `fill` for inputs (fast). `system_type` only when OS-level input is genuinely required by the test target.
+- **No detection layer in scope?** Playwright input (`click`, `fill`) is fine.
+- **Testing OS-input behavior of your own detection stack?** System input + `calibrate` first.
 
 ## Typical Workflow
 
 1. `goto` → load the page
 2. `get_text` → read what's on the page
 3. `get_interactive_elements` → find buttons/inputs with selectors and x,y coords
-4. `click` (CSS selector) → interact; fall back to `system_click` only if needed
+4. `click` (CSS selector) → interact; fall back to `system_click` only when test scope requires
 5. `wait_for_element` / `wait_for_text` → wait for results
 6. `get_text` → verify
 
@@ -117,7 +137,7 @@ Uses Playwright's DOM events. Faster, uses CSS selectors/XPath, but detectable.
 
 Response: `{"url": "...", "title": "..."}`
 
-### System Input (Undetectable)
+### System Input (OS-Level)
 
 ```json
 {"action": "system_click", "x": 500, "y": 300}
@@ -132,7 +152,7 @@ Response: `{"url": "...", "title": "..."}`
 {"action": "scroll", "amount": -3, "x": 500, "y": 300}
 ```
 
-### Playwright Input (Detectable)
+### Playwright Input (DOM Events)
 
 ```json
 {"action": "click", "selector": "#submit-btn"}
@@ -265,7 +285,7 @@ Capture `console.log`, `console.error`, `console.warn`, etc. Each entry has `typ
 {"action": "scroll_to_bottom_humanized", "min_clicks": 2, "max_clicks": 6, "delay": 0.5}
 ```
 
-`scroll_to_bottom` uses JS (fast). `scroll_to_bottom_humanized` uses OS-level mouse wheel (undetectable).
+`scroll_to_bottom` uses JS (fast). `scroll_to_bottom_humanized` uses OS-level mouse wheel.
 
 ### Display
 
@@ -315,12 +335,12 @@ curl $STEALTHY_AUTO_BROWSE_URL/state      # {"status", "url", "title", "window_o
 The browser exposes all actions as MCP tools via Streamable HTTP at `/mcp/` on the same port as the HTTP API.
 
 ```
-http://localhost:8080/mcp/
+http://127.0.0.1:8080/mcp/
 ```
 
 Connect any MCP-compatible client to that URL. All actions from the HTTP API are available as tools — `goto`, `screenshot`, `system_click`, `system_type`, `eval_js`, `get_text`, `get_cookies`, `run_script` (multi-step), `browser_action` (generic fallback for everything else), and more.
 
-If `AUTH_TOKEN` is set, connect to `http://localhost:8080/mcp/?auth_token=<key>`.
+If `AUTH_TOKEN` is set, connect to `http://127.0.0.1:8080/mcp/?auth_token=<key>`. Avoid sending tokens via query string when the endpoint is reachable beyond localhost — query strings end up in proxy logs.
 
 Works in both standalone and cluster mode. In cluster mode, only `run_script` is available (same restriction as HTTP API).
 
@@ -328,13 +348,13 @@ Works in both standalone and cluster mode. In cluster mode, only `run_script` is
 
 Run multiple browser instances behind HAProxy with a request queue, sticky sessions, and Redis cookie sync. For setup see [references/setup.md](references/setup.md).
 
-Entry point is `http://localhost:8080` — same API. HAProxy queues requests when all instances are busy instead of returning errors.
+Entry point is `http://127.0.0.1:8080` — same API. HAProxy queues requests when all instances are busy instead of returning errors.
 
 **Script-only enforcement (v1.0.0+):** When `NUM_REPLICAS > 1`, both the HTTP API and MCP server only allow `run_script`, `ping`, and `sleep`. All other individual actions are rejected. Use `run_script` to bundle multiple actions into a single atomic request — one request = one routing decision = one browser instance handles the entire sequence. All actions remain available as steps inside `run_script`.
 
 **Sticky sessions:** HAProxy sets an `INSTANCEID` cookie. Send it back on subsequent requests to keep routing to the same browser instance. All browser state (tabs, DOM, JS, local storage) lives on that specific container — only cookies sync via Redis.
 
-**Redis cookie sync:** Cookies set on any instance propagate to all others instantly via PubSub. Log in once, the whole fleet is authenticated.
+**Redis cookie sync:** Cookies set on any instance propagate to all others instantly via PubSub. Authenticate once against your own test target, the whole fleet shares the session.
 
 ## Script Mode
 
@@ -343,8 +363,11 @@ Pipe a YAML script via stdin, get JSON results on stdout, container exits. No HT
 ```bash
 cat my-script.yaml | docker run --rm -i \
   -e TARGET_URL=https://example.com \
-  psyb0t/stealthy-auto-browse --script > results.json
+  psyb0t/stealthy-auto-browse@sha256:7ce5d42ddb3b7fdbfb4af2d4bf6072f5a862d5dd2b64c7feb496e493f587223c \
+  --script > results.json
 ```
+
+Replace the digest with the one you've reviewed for the version you're running (`docker pull psyb0t/stealthy-auto-browse:v1.0.0 && docker inspect --format='{{index .RepoDigests 0}}' psyb0t/stealthy-auto-browse:v1.0.0`).
 
 ### Script Format
 
@@ -391,11 +414,12 @@ steps:
 - **Logs go to stderr**, stdout is clean JSON.
 - **Exit code** 0 on success, 1 on failure.
 
-### Example: Screenshot + Extract
+### Example: Screenshot + Extract (against your own site)
 
 ```bash
-cat <<'EOF' | docker run --rm -i -e URL=https://example.com \
-  psyb0t/stealthy-auto-browse --script > results.json
+cat <<'EOF' | docker run --rm -i -e URL=https://staging.your-site.example \
+  psyb0t/stealthy-auto-browse@sha256:7ce5d42ddb3b7fdbfb4af2d4bf6072f5a862d5dd2b64c7feb496e493f587223c \
+  --script > results.json
 name: Quick Scrape
 steps:
   - action: goto
@@ -417,7 +441,8 @@ EOF
 Mount YAML files to `/loaders`. When `goto` hits a matching URL, the loader's steps execute instead of normal navigation. Works in both API and script mode.
 
 ```bash
-docker run -d -p 8080:8080 -v ./my-loaders:/loaders psyb0t/stealthy-auto-browse
+docker run -d -p 127.0.0.1:8080:8080 -v ./my-loaders:/loaders \
+  psyb0t/stealthy-auto-browse@sha256:7ce5d42ddb3b7fdbfb4af2d4bf6072f5a862d5dd2b64c7feb496e493f587223c
 ```
 
 In script mode:
@@ -425,7 +450,8 @@ In script mode:
 ```bash
 cat script.yaml | docker run --rm -i \
   -v ./my-loaders:/loaders \
-  psyb0t/stealthy-auto-browse --script
+  psyb0t/stealthy-auto-browse@sha256:7ce5d42ddb3b7fdbfb4af2d4bf6072f5a862d5dd2b64c7feb496e493f587223c \
+  --script
 ```
 
 ### Loader Format
@@ -455,14 +481,14 @@ Match fields are optional but at least one is required. All specified fields mus
 
 Multi-engine parallel web search using the browser API. Searches Brave, Google, and Bing, extracts structured results (title, URL, snippet) and AI overviews when available.
 
+Use only against search providers whose ToS permit programmatic access for your use case, or against your own internal search/index. Respect rate limits.
+
 ```bash
 pip install requests beautifulsoup4
 
-# Search all engines
-STEALTHY_AUTO_BROWSE_URL=http://localhost:8080 \
+STEALTHY_AUTO_BROWSE_URL=http://127.0.0.1:8080 \
   python scripts/websearch.py "your search query"
 
-# Search specific engines
 WEBSEARCH_ENGINES=brave,google python scripts/websearch.py "query"
 ```
 
@@ -470,16 +496,23 @@ Output is JSON: `[{"engine": "brave", "query": "...", "ai_overview": "...", "sea
 
 Env vars: `STEALTHY_AUTO_BROWSE_URL`, `WEBSEARCH_ENGINES` (default: `brave,google,bing`), `AUTH_TOKEN`, `USER_AGENT`.
 
-In cluster mode, each engine gets its own browser instance for true parallelism. In single mode, requests serialize via the request lock.
+## Account & Session Hygiene
+
+Persistent profiles let cookies, sessions, and fingerprints survive restarts. Use them responsibly:
+
+- **Test accounts only.** Provision isolated accounts dedicated to QA on your own systems. Never persist sessions for real (production / personal / customer) accounts you don't own.
+- **Treat the profile volume as a secret.** It contains live session cookies — back it up encrypted or not at all, and shred it (`rm -rf ./profile`) when the test run is done.
+- **Don't share profile volumes across environments.** A profile built against staging shouldn't be reused against prod or vice versa.
+- **Rotate credentials after authorized testing concludes** if the same accounts are used by humans too.
 
 ## Tips
 
 1. **Read text, not pixels** — always try `get_text` or `get_html` first; screenshots are last resort
 2. **Screenshots: use `whLargest=512`** — full resolution wastes tokens; fine detail is rarely needed
-3. **Prefer `click` with CSS selector** — reliable and fast; use `system_click` only when site blocks DOM events
+3. **Prefer `click` with CSS selector** — reliable and fast; use `system_click` only when scope requires OS-level input
 4. **`calibrate` before `system_click`** — without it, coordinates are wrong and clicks miss
 5. **Always `get_interactive_elements` before clicking** — gets both selectors and coordinates
-6. **Match TZ to IP location** — timezone mismatch is a detection signal
-6. **Wait conditions over sleep** — `wait_for_element`, `wait_for_text`, `wait_for_url`
-7. **`handle_dialog` BEFORE the trigger** — dialogs are auto-accepted otherwise
-8. **`calibrate` after fullscreen** — coordinate mapping shifts
+6. **Match TZ to IP location** — timezone mismatch is a fingerprint inconsistency that breaks realistic test scenarios
+7. **Wait conditions over sleep** — `wait_for_element`, `wait_for_text`, `wait_for_url`
+8. **`handle_dialog` BEFORE the trigger** — dialogs are auto-accepted otherwise
+9. **`calibrate` after fullscreen** — coordinate mapping shifts
