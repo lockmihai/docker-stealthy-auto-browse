@@ -17,9 +17,9 @@ steps:
     selector: 'input[name="search"]'
     value: 'Docker (software)'
 
-  # 4. Press Enter to submit the search
-  - action: send_key
-    key: enter
+  # 4. Click the search button to submit
+  - action: click
+    selector: 'button.cdx-search-input__end-button'
 
   # 5. Wait for the main page content heading to load
   - action: wait_for_element
