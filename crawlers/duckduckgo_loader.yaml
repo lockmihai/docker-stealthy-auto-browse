@@ -1,0 +1,31 @@
+name: DuckDuckGo Banner Injector
+match:
+  domain: duckduckgo.com
+steps:
+  # 1. Navigate to the matched URL
+  - action: goto
+    url: "${url}"
+    wait_until: domcontentloaded
+
+  # 2. Wait for the search box input element to be visible
+  - action: wait_for_element
+    selector: 'input[name="q"]'
+    state: visible
+    timeout: 10
+
+  # 3. Inject a friendly success banner at the top of the body
+  - action: eval
+    expression: |
+      (() => {
+        const banner = document.createElement('div');
+        banner.id = 'stealth-demo-banner';
+        banner.textContent = 'Stealth Browser Auto-Loader triggered successfully!';
+        banner.style.cssText =
+          'background:#10b981;color:#fff;padding:12px;text-align:center;' +
+          'font-size:16px;font-weight:bold;position:relative;z-index:9999;width:100%;';
+        document.body.prepend(banner);
+      })()
+
+  # 4. Small pause to allow the injection to settle
+  - action: sleep
+    duration: 0.5

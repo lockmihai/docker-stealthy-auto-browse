@@ -1,0 +1,52 @@
+name: Wikipedia Search Crawler
+on_error: stop
+steps:
+  # 1. Navigate to the main English Wikipedia URL
+  - action: goto
+    url: ${env.TARGET_URL}
+    wait_until: domcontentloaded
+
+  # 2. Wait for the search box input element to be visible
+  - action: wait_for_element
+    selector: 'input[name="search"]'
+    state: visible
+    timeout: 10
+
+  # 3. Enter the search term "Docker"
+  - action: fill
+    selector: 'input[name="search"]'
+    value: 'Docker (software)'
+
+  # 4. Press Enter to submit the search
+  - action: send_key
+    key: enter
+
+  # 5. Wait for the main page content heading to load
+  - action: wait_for_element
+    selector: '#firstHeading'
+    state: visible
+    timeout: 10
+
+  # 6. Extract the document title
+  - action: eval
+    expression: 'document.title'
+    output_id: title
+
+  # 7. Extract the text content of the main heading
+  - action: eval
+    expression: 'document.querySelector("#firstHeading")?.textContent.trim()'
+    output_id: heading_text
+
+  # 8. Extract the first body paragraph to confirm we loaded the page
+  - action: eval
+    expression: 'document.querySelector("#mw-content-text p")?.textContent.trim()'
+    output_id: first_paragraph
+
+  # 9. Get the page text content
+  - action: get_text
+    output_id: summary_text
+
+  # 10. Save a thumbnail screenshot to verify the layout visually
+  - action: save_screenshot
+    output_id: thumbnail_screenshot
+    whLargest: 800
